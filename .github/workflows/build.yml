@@ -8,12 +8,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Find project
         run: |
-          mkdir project
-          unzip -q "$(ls *.zip | head -n 1)" -d project
-          DIR=$(dirname "$(find project -name settings.gradle.kts | head -n 1)")
+          FOUND=$(find . -name settings.gradle.kts -not -path "./.git/*" | head -n 1)
+          if [ -z "$FOUND" ]; then
+            ZIP=$(find . -iname "*.zip" -not -path "./.git/*" | head -n 1)
+            if [ -z "$ZIP" ]; then
+              echo "No project files and no zip found"
+              ls -R | head -50
+              exit 1
+            fi
+            mkdir project
+            unzip -q "$ZIP" -d project
+            FOUND=$(find project -name settings.gradle.kts | head -n 1)
+          fi
+          DIR=$(dirname "$FOUND")
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          echo "Project folder: $DIR"
 
       - uses: actions/setup-java@v4
         with:
