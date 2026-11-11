@@ -1,0 +1,6 @@
+{
+  "name": "SONORA",
+  "description": "Minimal music widget customization app with active media playback controls and custom artwork.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
