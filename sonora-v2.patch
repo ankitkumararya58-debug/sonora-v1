@@ -1,0 +1,2301 @@
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index ee474e6..1c2580b 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -4,6 +4,9 @@
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
++    <!-- Optional: only used by the "Live audio" visualiser switch -->
++    <uses-permission android:name="android.permission.RECORD_AUDIO" />
++    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+ 
+     <application
+         android:allowBackup="true"
+@@ -50,6 +53,18 @@
+                 android:resource="@xml/sonora_widget_info" />
+         </receiver>
+ 
++        <receiver
++            android:name=".widget.SonoraCoverWidgetProvider"
++            android:exported="true"
++            android:label="@string/cover_widget_label">
++            <intent-filter>
++                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
++            </intent-filter>
++            <meta-data
++                android:name="android.appwidget.provider"
++                android:resource="@xml/sonora_cover_widget_info" />
++        </receiver>
++
+     </application>
+ 
+ </manifest>
+diff --git a/app/src/main/java/com/example/data/SonoraPreferences.kt b/app/src/main/java/com/example/data/SonoraPreferences.kt
+index e034e98..38847a6 100644
+--- a/app/src/main/java/com/example/data/SonoraPreferences.kt
++++ b/app/src/main/java/com/example/data/SonoraPreferences.kt
+@@ -2,6 +2,7 @@ package com.example.data
+ 
+ import android.content.Context
+ import android.content.SharedPreferences
++import com.example.model.CoverShape
+ import com.example.model.WidgetPreset
+ import com.example.model.WidgetSettings
+ import com.example.model.WidgetTheme
+@@ -46,10 +47,61 @@ class SonoraPreferences(private val context: Context) {
+             opacityPercent = opacity,
+             showBlurBorder = showBlurBorder,
+             customArtworkPath = customPath,
+-            useCustomArtwork = useCustomArtwork && customPath != null
++            useCustomArtwork = useCustomArtwork && customPath != null,
++            coverShape = loadCoverShape(),
++            coverSizePercent = prefs.getInt(KEY_COVER_SIZE, 100),
++            showVisualizer = prefs.getBoolean(KEY_VISUALIZER, true),
++            showDeviceChip = prefs.getBoolean(KEY_DEVICE_CHIP, true),
++            themedIcons = prefs.getBoolean(KEY_THEMED_ICONS, true),
++            liveVisualizer = prefs.getBoolean(KEY_LIVE_VIZ, false),
++            playlistUrl = prefs.getString(KEY_PLAYLIST_URL, "") ?: ""
+         )
+     }
+ 
++    private fun loadCoverShape(): CoverShape {
++        val str = prefs.getString(KEY_COVER_SHAPE, CoverShape.ROUNDED.name)
++        return try {
++            CoverShape.valueOf(str ?: CoverShape.ROUNDED.name)
++        } catch (e: Exception) {
++            CoverShape.ROUNDED
++        }
++    }
++
++    fun saveCoverShape(shape: CoverShape) {
++        prefs.edit().putString(KEY_COVER_SHAPE, shape.name).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(coverShape = shape)
++    }
++
++    fun saveCoverSize(percent: Int) {
++        prefs.edit().putInt(KEY_COVER_SIZE, percent).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(coverSizePercent = percent)
++    }
++
++    fun saveShowVisualizer(show: Boolean) {
++        prefs.edit().putBoolean(KEY_VISUALIZER, show).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(showVisualizer = show)
++    }
++
++    fun saveShowDeviceChip(show: Boolean) {
++        prefs.edit().putBoolean(KEY_DEVICE_CHIP, show).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(showDeviceChip = show)
++    }
++
++    fun saveThemedIcons(enabled: Boolean) {
++        prefs.edit().putBoolean(KEY_THEMED_ICONS, enabled).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(themedIcons = enabled)
++    }
++
++    fun saveLiveVisualizer(enabled: Boolean) {
++        prefs.edit().putBoolean(KEY_LIVE_VIZ, enabled).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(liveVisualizer = enabled)
++    }
++
++    fun savePlaylistUrl(url: String) {
++        prefs.edit().putString(KEY_PLAYLIST_URL, url).apply()
++        _settingsFlow.value = _settingsFlow.value.copy(playlistUrl = url)
++    }
++
+     fun savePreset(preset: WidgetPreset) {
+         prefs.edit().putString(KEY_PRESET, preset.name).apply()
+         _settingsFlow.value = _settingsFlow.value.copy(preset = preset)
+@@ -102,5 +154,12 @@ class SonoraPreferences(private val context: Context) {
+         private const val KEY_OPACITY = "widget_opacity"
+         private const val KEY_BLUR = "widget_blur"
+         private const val KEY_USE_CUSTOM_ARTWORK = "widget_use_custom_artwork"
++        private const val KEY_COVER_SHAPE = "cover_shape"
++        private const val KEY_COVER_SIZE = "cover_size_percent"
++        private const val KEY_VISUALIZER = "show_visualizer"
++        private const val KEY_DEVICE_CHIP = "show_device_chip"
++        private const val KEY_THEMED_ICONS = "themed_icons"
++        private const val KEY_PLAYLIST_URL = "playlist_url"
++        private const val KEY_LIVE_VIZ = "live_visualizer"
+     }
+ }
+diff --git a/app/src/main/java/com/example/model/WidgetConfig.kt b/app/src/main/java/com/example/model/WidgetConfig.kt
+index af41d7a..95c59b3 100644
+--- a/app/src/main/java/com/example/model/WidgetConfig.kt
++++ b/app/src/main/java/com/example/model/WidgetConfig.kt
+@@ -8,7 +8,17 @@ enum class WidgetPreset {
+ enum class WidgetTheme {
+     DARK,
+     LIGHT,
+-    TRANSPARENT
++    TRANSPARENT,
++    PIXEL,
++    GLASS
++}
++
++/** Shape used by the standalone "Cover" widget. */
++enum class CoverShape {
++    ROUNDED,
++    CIRCLE,
++    SQUIRCLE,
++    PIXEL
+ }
+ 
+ data class WidgetSettings(
+@@ -18,5 +28,13 @@ data class WidgetSettings(
+     val opacityPercent: Int = 90,
+     val showBlurBorder: Boolean = true,
+     val customArtworkPath: String? = null,
+-    val useCustomArtwork: Boolean = false
++    val useCustomArtwork: Boolean = false,
++    // --- v2 additions ---
++    val coverShape: CoverShape = CoverShape.ROUNDED,
++    val coverSizePercent: Int = 100,
++    val showVisualizer: Boolean = true,
++    val showDeviceChip: Boolean = true,
++    val themedIcons: Boolean = true,
++    val liveVisualizer: Boolean = false,
++    val playlistUrl: String = ""
+ )
+diff --git a/app/src/main/java/com/example/service/AudioOutputMonitor.kt b/app/src/main/java/com/example/service/AudioOutputMonitor.kt
+new file mode 100644
+index 0000000..12aac5e
+--- /dev/null
++++ b/app/src/main/java/com/example/service/AudioOutputMonitor.kt
+@@ -0,0 +1,85 @@
++package com.example.service
++
++import android.content.Context
++import android.media.AudioDeviceCallback
++import android.media.AudioDeviceInfo
++import android.media.AudioManager
++import android.os.Handler
++import android.os.Looper
++
++enum class OutputKind { PHONE_SPEAKER, WIRED, BLUETOOTH, USB, OTHER }
++
++data class OutputDevice(
++    val kind: OutputKind = OutputKind.PHONE_SPEAKER,
++    val label: String = "Phone speaker"
++)
++
++/**
++ * Works out where audio is currently being sent (phone speaker, wired / bluetooth
++ * headphones...) and tells us when that changes (plug in / connect / disconnect).
++ */
++object AudioOutputMonitor {
++
++    private var callback: AudioDeviceCallback? = null
++
++    fun current(context: Context): OutputDevice {
++        val am = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
++            ?: return OutputDevice()
++        val outputs = try {
++            am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
++        } catch (e: Exception) {
++            emptyList()
++        }
++
++        // Priority: Bluetooth > wired > USB > phone speaker
++        outputs.firstOrNull { isBluetooth(it.type) }?.let {
++            val name = it.productName?.toString()?.trim().orEmpty()
++            return OutputDevice(OutputKind.BLUETOOTH, if (name.isNotEmpty()) name else "Bluetooth audio")
++        }
++        outputs.firstOrNull {
++            it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
++                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
++                it.type == AudioDeviceInfo.TYPE_LINE_ANALOG
++        }?.let {
++            return OutputDevice(OutputKind.WIRED, "Wired headphones")
++        }
++        outputs.firstOrNull {
++            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
++                it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
++                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
++        }?.let {
++            return OutputDevice(OutputKind.USB, "USB audio")
++        }
++        return OutputDevice(OutputKind.PHONE_SPEAKER, "Phone speaker")
++    }
++
++    private fun isBluetooth(type: Int): Boolean =
++        type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
++            type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
++            type == AudioDeviceInfo.TYPE_HEARING_AID ||
++            type == 26 || // TYPE_BLE_HEADSET (API 31)
++            type == 27 || // TYPE_BLE_SPEAKER (API 31)
++            type == 30    // TYPE_BLE_BROADCAST (API 33)
++
++    /** Start watching. Safe to call more than once. */
++    fun start(context: Context, onChanged: (OutputDevice) -> Unit) {
++        if (callback != null) {
++            onChanged(current(context))
++            return
++        }
++        val appContext = context.applicationContext
++        val am = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
++        val cb = object : AudioDeviceCallback() {
++            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
++                onChanged(current(appContext))
++            }
++
++            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
++                onChanged(current(appContext))
++            }
++        }
++        callback = cb
++        am.registerAudioDeviceCallback(cb, Handler(Looper.getMainLooper()))
++        onChanged(current(appContext))
++    }
++}
+diff --git a/app/src/main/java/com/example/service/MediaPlaybackManager.kt b/app/src/main/java/com/example/service/MediaPlaybackManager.kt
+index bbd0d6d..299cd4f 100644
+--- a/app/src/main/java/com/example/service/MediaPlaybackManager.kt
++++ b/app/src/main/java/com/example/service/MediaPlaybackManager.kt
+@@ -20,6 +20,10 @@ object MediaPlaybackManager {
+     private val _trackState = MutableStateFlow(MediaTrackState())
+     val trackState: StateFlow<MediaTrackState> = _trackState.asStateFlow()
+ 
++    // Where the sound is going right now (phone speaker / earphones / bluetooth...)
++    private val _outputDevice = MutableStateFlow(OutputDevice())
++    val outputDevice: StateFlow<OutputDevice> = _outputDevice.asStateFlow()
++
+     private var activeController: MediaController? = null
+     private var mediaSessionManager: MediaSessionManager? = null
+     private var sessionsChangedListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+@@ -69,6 +73,13 @@ object MediaPlaybackManager {
+         }
+ 
+         refreshActiveSessions(appContext)
++
++        AudioOutputMonitor.start(appContext) { device ->
++            if (_outputDevice.value != device) {
++                _outputDevice.value = device
++                notifyStateChanged()
++            }
++        }
+         isInitialized = true
+     }
+ 
+diff --git a/app/src/main/java/com/example/service/SonoraNotificationListenerService.kt b/app/src/main/java/com/example/service/SonoraNotificationListenerService.kt
+index 9103b2b..0f85016 100644
+--- a/app/src/main/java/com/example/service/SonoraNotificationListenerService.kt
++++ b/app/src/main/java/com/example/service/SonoraNotificationListenerService.kt
+@@ -11,6 +11,10 @@ class SonoraNotificationListenerService : NotificationListenerService() {
+         super.onListenerConnected()
+         val component = ComponentName(this, SonoraNotificationListenerService::class.java)
+         MediaPlaybackManager.init(this, component)
++        val appContext = applicationContext
++        MediaPlaybackManager.setOnStateChangedListener {
++            SonoraAppWidgetProvider.updateAllWidgets(appContext)
++        }
+         SonoraAppWidgetProvider.updateAllWidgets(this)
+     }
+ 
+diff --git a/app/src/main/java/com/example/service/VisualizerEngine.kt b/app/src/main/java/com/example/service/VisualizerEngine.kt
+new file mode 100644
+index 0000000..674ce4f
+--- /dev/null
++++ b/app/src/main/java/com/example/service/VisualizerEngine.kt
+@@ -0,0 +1,117 @@
++package com.example.service
++
++import android.Manifest
++import android.content.Context
++import android.content.pm.PackageManager
++import android.media.audiofx.Visualizer
++import androidx.core.content.ContextCompat
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlin.math.hypot
++import kotlin.math.max
++import kotlin.math.min
++import kotlin.math.sqrt
++
++/**
++ * Optional LIVE audio levels for the in-app visualiser.
++ *
++ * Uses android.media.audiofx.Visualizer on the global output mix. It needs the
++ * RECORD_AUDIO permission. If the permission is missing, the device blocks it, or
++ * the playing app protects its audio, [start] returns false and the UI falls back
++ * to the animated visualiser.
++ */
++object VisualizerEngine {
++    const val BAR_COUNT = 24
++
++    private var visualizer: Visualizer? = null
++    private val smoothed = FloatArray(BAR_COUNT)
++
++    private val _levels = MutableStateFlow(FloatArray(BAR_COUNT))
++    val levels: StateFlow<FloatArray> = _levels.asStateFlow()
++
++    private val _isLive = MutableStateFlow(false)
++    val isLive: StateFlow<Boolean> = _isLive.asStateFlow()
++
++    fun hasPermission(context: Context): Boolean =
++        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
++            PackageManager.PERMISSION_GRANTED
++
++    @Synchronized
++    fun start(context: Context): Boolean {
++        if (visualizer != null) return true
++        if (!hasPermission(context)) return false
++        return try {
++            val v = Visualizer(0)
++            v.enabled = false
++            val range = Visualizer.getCaptureSizeRange()
++            v.captureSize = min(range[1], 1024).coerceAtLeast(range[0])
++            v.setDataCaptureListener(
++                object : Visualizer.OnDataCaptureListener {
++                    override fun onWaveFormDataCapture(vis: Visualizer?, waveform: ByteArray?, samplingRate: Int) {}
++
++                    override fun onFftDataCapture(vis: Visualizer?, fft: ByteArray?, samplingRate: Int) {
++                        if (fft != null) processFft(fft)
++                    }
++                },
++                Visualizer.getMaxCaptureRate() / 2,
++                false,
++                true
++            )
++            v.enabled = true
++            visualizer = v
++            _isLive.value = true
++            true
++        } catch (t: Throwable) {
++            release()
++            false
++        }
++    }
++
++    @Synchronized
++    fun stop() {
++        release()
++    }
++
++    private fun release() {
++        try {
++            visualizer?.enabled = false
++            visualizer?.release()
++        } catch (t: Throwable) {
++            // ignore
++        }
++        visualizer = null
++        _isLive.value = false
++        java.util.Arrays.fill(smoothed, 0f)
++        _levels.value = FloatArray(BAR_COUNT)
++    }
++
++    private fun processFft(fft: ByteArray) {
++        // Layout: [dc, nyquist, re1, im1, re2, im2, ...]
++        val bins = fft.size / 2 - 1
++        if (bins < BAR_COUNT) return
++        // Only use the lower ~60 % of the spectrum, that is where music energy is.
++        val usable = (bins * 0.6f).toInt().coerceAtLeast(BAR_COUNT)
++        val out = FloatArray(BAR_COUNT)
++        for (bar in 0 until BAR_COUNT) {
++            // Logarithmic-ish grouping: low bars cover few bins, high bars cover more.
++            val startF = (usable * (bar.toFloat() / BAR_COUNT) * (bar.toFloat() / BAR_COUNT)).toInt()
++            val endF = (usable * ((bar + 1).toFloat() / BAR_COUNT) * ((bar + 1).toFloat() / BAR_COUNT)).toInt()
++            val from = max(1, startF)
++            val to = max(from + 1, endF)
++            var peak = 0f
++            for (i in from until min(to, bins)) {
++                val re = fft[2 * i].toFloat()
++                val im = fft[2 * i + 1].toFloat()
++                peak = max(peak, hypot(re, im))
++            }
++            // 0..~181 -> 0..1 with a soft curve
++            out[bar] = sqrt((peak / 128f).coerceIn(0f, 1f))
++        }
++        for (i in 0 until BAR_COUNT) {
++            // fast attack, slow decay = nicer bars
++            smoothed[i] = if (out[i] > smoothed[i]) out[i] else smoothed[i] * 0.82f + out[i] * 0.18f
++        }
++        _levels.value = smoothed.copyOf()
++    }
++}
+diff --git a/app/src/main/java/com/example/ui/SonoraApp.kt b/app/src/main/java/com/example/ui/SonoraApp.kt
+index 1d8bc69..bc6e68c 100644
+--- a/app/src/main/java/com/example/ui/SonoraApp.kt
++++ b/app/src/main/java/com/example/ui/SonoraApp.kt
+@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.filled.GraphicEq
++import androidx.compose.material.icons.filled.LibraryMusic
+ import androidx.compose.material.icons.filled.Palette
+ import androidx.compose.material.icons.filled.Settings
+ import androidx.compose.material.icons.outlined.GraphicEq
++import androidx.compose.material.icons.outlined.LibraryMusic
+ import androidx.compose.material.icons.outlined.Palette
+ import androidx.compose.material.icons.outlined.Settings
+ import androidx.compose.material3.Icon
+@@ -52,6 +54,7 @@ import androidx.lifecycle.Lifecycle
+ import androidx.lifecycle.LifecycleEventObserver
+ import com.example.ui.components.CustomizeSection
+ import com.example.ui.components.NowPlayingSection
++import com.example.ui.components.PlaylistSection
+ import com.example.ui.components.SettingsSection
+ import com.example.ui.theme.SonoraAccentCyan
+ import com.example.ui.theme.SonoraAccentSilver
+@@ -71,6 +74,7 @@ enum class SonoraTab(
+ ) {
+     HOME("Home", Icons.Filled.GraphicEq, Icons.Outlined.GraphicEq, "tab_home"),
+     CUSTOMIZE("Customize", Icons.Filled.Palette, Icons.Outlined.Palette, "tab_customize"),
++    PLAYLIST("Playlist", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "tab_playlist"),
+     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "tab_settings")
+ }
+ 
+@@ -185,6 +189,11 @@ fun SonoraApp(viewModel: SonoraViewModel) {
+                         widgetSettings = widgetSettings,
+                         modifier = Modifier.fillMaxSize()
+                     )
++                    SonoraTab.PLAYLIST -> PlaylistSection(
++                        viewModel = viewModel,
++                        widgetSettings = widgetSettings,
++                        modifier = Modifier.fillMaxSize()
++                    )
+                     SonoraTab.SETTINGS -> SettingsSection(
+                         viewModel = viewModel,
+                         isPermissionGranted = isPermissionGranted,
+diff --git a/app/src/main/java/com/example/ui/SonoraViewModel.kt b/app/src/main/java/com/example/ui/SonoraViewModel.kt
+index 0c9302a..c6a1313 100644
+--- a/app/src/main/java/com/example/ui/SonoraViewModel.kt
++++ b/app/src/main/java/com/example/ui/SonoraViewModel.kt
+@@ -6,11 +6,13 @@ import androidx.lifecycle.AndroidViewModel
+ import androidx.lifecycle.viewModelScope
+ import com.example.data.CustomArtworkManager
+ import com.example.data.SonoraPreferences
++import com.example.model.CoverShape
+ import com.example.model.MediaTrackState
+ import com.example.model.WidgetPreset
+ import com.example.model.WidgetSettings
+ import com.example.model.WidgetTheme
+ import com.example.service.MediaPlaybackManager
++import com.example.service.OutputDevice
+ import com.example.widget.SonoraAppWidgetProvider
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.SharingStarted
+@@ -27,6 +29,8 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application)
+ 
+     val widgetSettings: StateFlow<WidgetSettings> = preferences.settingsFlow
+ 
++    val outputDevice: StateFlow<OutputDevice> = MediaPlaybackManager.outputDevice
++
+     private val _isPermissionGranted = MutableStateFlow(false)
+     val isPermissionGranted: StateFlow<Boolean> = _isPermissionGranted.asStateFlow()
+ 
+@@ -128,6 +132,39 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application)
+         syncToWidgets()
+     }
+ 
++    fun setCoverShape(shape: CoverShape) {
++        preferences.saveCoverShape(shape)
++        syncToWidgets()
++    }
++
++    fun setCoverSize(percent: Int) {
++        preferences.saveCoverSize(percent)
++        syncToWidgets()
++    }
++
++    fun setShowVisualizer(show: Boolean) {
++        preferences.saveShowVisualizer(show)
++        syncToWidgets()
++    }
++
++    fun setShowDeviceChip(show: Boolean) {
++        preferences.saveShowDeviceChip(show)
++        syncToWidgets()
++    }
++
++    fun setThemedIcons(enabled: Boolean) {
++        preferences.saveThemedIcons(enabled)
++        syncToWidgets()
++    }
++
++    fun setLiveVisualizer(enabled: Boolean) {
++        preferences.saveLiveVisualizer(enabled)
++    }
++
++    fun setPlaylistUrl(url: String) {
++        preferences.savePlaylistUrl(url.trim())
++    }
++
+     fun syncToWidgets() {
+         SonoraAppWidgetProvider.updateAllWidgets(getApplication())
+     }
+diff --git a/app/src/main/java/com/example/ui/components/AudioVisualizer.kt b/app/src/main/java/com/example/ui/components/AudioVisualizer.kt
+new file mode 100644
+index 0000000..fea1563
+--- /dev/null
++++ b/app/src/main/java/com/example/ui/components/AudioVisualizer.kt
+@@ -0,0 +1,106 @@
++package com.example.ui.components
++
++import androidx.compose.foundation.Canvas
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableLongStateOf
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.runtime.withFrameNanos
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.StrokeCap
++import androidx.compose.ui.platform.LocalContext
++import com.example.service.VisualizerEngine
++import kotlin.math.pow
++import kotlin.math.roundToInt
++import kotlin.math.sin
++
++/**
++ * Spotify-style bar visualiser.
++ *
++ * - liveEnabled + RECORD_AUDIO granted -> real FFT levels from the audio output mix
++ * - otherwise -> smooth animated bars (seeded by the song so every song "looks" different)
++ */
++@Composable
++fun AudioVisualizerBars(
++    isPlaying: Boolean,
++    seed: String,
++    color: Color,
++    modifier: Modifier = Modifier,
++    pixelStyle: Boolean = false,
++    liveEnabled: Boolean = false
++) {
++    val context = LocalContext.current
++    val barCount = VisualizerEngine.BAR_COUNT
++
++    var liveOk by remember { mutableStateOf(false) }
++    DisposableEffect(liveEnabled, isPlaying) {
++        liveOk = if (liveEnabled && isPlaying) VisualizerEngine.start(context) else false
++        onDispose {
++            if (liveEnabled) VisualizerEngine.stop()
++        }
++    }
++    val liveLevels by VisualizerEngine.levels.collectAsState()
++
++    var frameTime by remember { mutableLongStateOf(0L) }
++    LaunchedEffect(isPlaying, liveOk) {
++        if (isPlaying && !liveOk) {
++            while (true) {
++                withFrameNanos { frameTime = it }
++            }
++        }
++    }
++
++    // stable per-song "personality" for the animated fallback
++    val speeds = remember(seed) {
++        val rnd = java.util.Random(seed.hashCode().toLong())
++        FloatArray(barCount * 4) { rnd.nextFloat() }
++    }
++
++    Canvas(modifier = modifier) {
++        val slot = size.width / barCount
++        val barWidth = slot * 0.55f
++        val t = frameTime / 1_000_000_000f
++        for (i in 0 until barCount) {
++            val level = when {
++                !isPlaying -> 0.08f
++                liveOk -> liveLevels.getOrElse(i) { 0f }.coerceIn(0.05f, 1f)
++                else -> {
++                    val a = (sin(t * (1.4f + speeds[i * 4] * 3.2f) + speeds[i * 4 + 1] * 6.28f) + 1f) / 2f
++                    val b = (sin(t * (0.7f + speeds[i * 4 + 2] * 2.4f) + speeds[i * 4 + 3] * 6.28f) + 1f) / 2f
++                    (0.12f + 0.88f * (a * b).pow(0.7f)).coerceIn(0.05f, 1f)
++                }
++            }
++            var h = size.height * level
++            if (pixelStyle) {
++                val step = size.height / 8f
++                h = (h / step).roundToInt().coerceAtLeast(1) * step
++            }
++            val x = slot * i + slot / 2f
++            val top = (size.height - h) / 2f
++            if (pixelStyle) {
++                drawRect(
++                    color = color,
++                    topLeft = Offset(x - barWidth / 2f, top),
++                    size = Size(barWidth, h)
++                )
++            } else {
++                val inset = barWidth / 2f
++                drawLine(
++                    color = color,
++                    start = Offset(x, top + inset),
++                    end = Offset(x, (top + h - inset).coerceAtLeast(top + inset)),
++                    strokeWidth = barWidth,
++                    cap = StrokeCap.Round
++                )
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/ui/components/CustomizeSection.kt b/app/src/main/java/com/example/ui/components/CustomizeSection.kt
+index 4285f6e..03dc0ae 100644
+--- a/app/src/main/java/com/example/ui/components/CustomizeSection.kt
++++ b/app/src/main/java/com/example/ui/components/CustomizeSection.kt
+@@ -192,6 +192,7 @@ fun CustomizeSection(
+                 modifier = Modifier.weight(1f).testTag("theme_transparent")
+             )
+         }
++        MoreThemeRow(settings = widgetSettings, viewModel = viewModel)
+ 
+         Spacer(modifier = Modifier.height(20.dp))
+ 
+@@ -338,6 +339,14 @@ fun CustomizeSection(
+ 
+         Spacer(modifier = Modifier.height(24.dp))
+ 
++        StudioExtras(
++            viewModel = viewModel,
++            settings = widgetSettings,
++            trackState = trackState
++        )
++
++        Spacer(modifier = Modifier.height(24.dp))
++
+         // Apply & Sync to Home Screen Widget Button
+         Button(
+             onClick = { viewModel.syncToWidgets() },
+@@ -380,28 +389,36 @@ fun WidgetLivePreview(
+ ) {
+     val context = LocalContext.current
+     val isPill = settings.preset == WidgetPreset.COMPACT_PILL
+-    val cornerRadius = if (isPill) 100.dp else settings.cornerRadiusDp.dp
++    val cornerRadius = when {
++        settings.theme == WidgetTheme.PIXEL -> 6.dp
++        isPill -> 100.dp
++        else -> settings.cornerRadiusDp.dp
++    }
+ 
+     val baseColor = when (settings.theme) {
+         WidgetTheme.DARK -> Color(0xFF12151B)
+         WidgetTheme.LIGHT -> Color(0xFFFFFFFF)
+         WidgetTheme.TRANSPARENT -> Color(0xFF000000)
++        WidgetTheme.PIXEL -> Color(0xFFFFFFFF)
++        WidgetTheme.GLASS -> Color(0xFFFFFFFF)
+     }
+ 
+     val alpha = when (settings.theme) {
+         WidgetTheme.TRANSPARENT -> (settings.opacityPercent / 100f * 0.45f)
++        WidgetTheme.GLASS -> (settings.opacityPercent / 100f * 0.30f)
+         else -> (settings.opacityPercent / 100f)
+     }
+ 
+     val backgroundColor = baseColor.copy(alpha = alpha)
+ 
+     val textColor = when (settings.theme) {
+-        WidgetTheme.LIGHT -> Color(0xFF12151B)
++        WidgetTheme.LIGHT, WidgetTheme.PIXEL -> Color(0xFF12151B)
+         else -> Color(0xFFFFFFFF)
+     }
+ 
+     val secondaryTextColor = when (settings.theme) {
+         WidgetTheme.LIGHT -> Color(0xFF5B6472)
++        WidgetTheme.PIXEL -> Color(0xFF444444)
+         else -> Color(0xFFA0A8B5)
+     }
+ 
+@@ -410,8 +427,10 @@ fun WidgetLivePreview(
+             WidgetTheme.LIGHT -> Color(0x26000000)
+             WidgetTheme.TRANSPARENT -> Color(0x66FFFFFF)
+             WidgetTheme.DARK -> Color(0x33FFFFFF)
++            WidgetTheme.PIXEL -> Color(0xFF111111)
++            WidgetTheme.GLASS -> Color(0x99FFFFFF)
+         }
+-        Modifier.border(1.dp, borderColor, RoundedCornerShape(cornerRadius))
++        Modifier.border(if (settings.theme == WidgetTheme.PIXEL) 3.dp else 1.dp, borderColor, RoundedCornerShape(cornerRadius))
+     } else Modifier
+ 
+     val shadowElevation = if (settings.showBlurBorder) 8.dp else 0.dp
+diff --git a/app/src/main/java/com/example/ui/components/NowPlayingSection.kt b/app/src/main/java/com/example/ui/components/NowPlayingSection.kt
+index 14d211e..e308680 100644
+--- a/app/src/main/java/com/example/ui/components/NowPlayingSection.kt
++++ b/app/src/main/java/com/example/ui/components/NowPlayingSection.kt
+@@ -53,6 +53,7 @@ import androidx.compose.material3.Surface
+ import androidx.compose.material3.Text
+ import androidx.compose.material3.TextButton
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
+ import androidx.compose.runtime.getValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+@@ -325,6 +326,13 @@ fun NowPlayingSection(
+             }
+         }
+ 
++        val outputDevice by viewModel.outputDevice.collectAsState()
++        HomeLiveExtras(
++            trackState = trackState,
++            settings = widgetSettings,
++            device = outputDevice
++        )
++
+         Spacer(modifier = Modifier.height(24.dp))
+ 
+         // Song Title
+diff --git a/app/src/main/java/com/example/ui/components/PlaylistSection.kt b/app/src/main/java/com/example/ui/components/PlaylistSection.kt
+new file mode 100644
+index 0000000..79d1485
+--- /dev/null
++++ b/app/src/main/java/com/example/ui/components/PlaylistSection.kt
+@@ -0,0 +1,349 @@
++package com.example.ui.components
++
++import android.content.ActivityNotFoundException
++import android.content.Intent
++import android.net.Uri
++import android.webkit.WebChromeClient
++import android.webkit.WebView
++import android.webkit.WebViewClient
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Edit
++import androidx.compose.material.icons.filled.LibraryMusic
++import androidx.compose.material.icons.filled.MusicNote
++import androidx.compose.material.icons.filled.OndemandVideo
++import androidx.compose.material.icons.filled.PlayArrow
++import androidx.compose.material3.Button
++import androidx.compose.material3.ButtonDefaults
++import androidx.compose.material3.Card
++import androidx.compose.material3.CardDefaults
++import androidx.compose.material3.Icon
++import androidx.compose.material3.IconButton
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedButton
++import androidx.compose.material3.OutlinedTextField
++import androidx.compose.material3.OutlinedTextFieldDefaults
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.platform.testTag
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import androidx.compose.ui.viewinterop.AndroidView
++import com.example.model.WidgetSettings
++import com.example.ui.SonoraViewModel
++import com.example.ui.theme.SonoraAccentCyan
++import com.example.ui.theme.SonoraBackground
++import com.example.ui.theme.SonoraBorder
++import com.example.ui.theme.SonoraBorderHighlight
++import com.example.ui.theme.SonoraSurface
++import com.example.ui.theme.SonoraSurfaceVariant
++import com.example.ui.theme.SonoraTextMuted
++import com.example.ui.theme.SonoraTextPrimary
++import com.example.ui.theme.SonoraTextSecondary
++
++private val LIST_PARAM = Regex("[?&]list=([A-Za-z0-9_-]+)")
++private val RAW_ID = Regex("^(PL|OL|UU|LL|FL|RD)[A-Za-z0-9_-]{10,}$")
++
++/** Accepts a full YouTube / YouTube Music playlist link, or a bare playlist id. */
++fun extractPlaylistId(input: String): String? {
++    val text = input.trim()
++    LIST_PARAM.find(text)?.let { return it.groupValues[1] }
++    if (RAW_ID.matches(text)) return text
++    return null
++}
++
++private fun openLink(context: android.content.Context, url: String, packageName: String? = null) {
++    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
++        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++        if (packageName != null) setPackage(packageName)
++    }
++    try {
++        context.startActivity(intent)
++    } catch (e: ActivityNotFoundException) {
++        if (packageName != null) {
++            // app not installed: open in browser instead
++            openLink(context, url, null)
++        }
++    }
++}
++
++@Composable
++fun PlaylistSection(
++    viewModel: SonoraViewModel,
++    widgetSettings: WidgetSettings,
++    modifier: Modifier = Modifier
++) {
++    val context = LocalContext.current
++    val savedUrl = widgetSettings.playlistUrl
++    val savedId = extractPlaylistId(savedUrl)
++
++    var input by rememberSaveable { mutableStateOf(savedUrl) }
++    var editing by rememberSaveable { mutableStateOf(savedId == null) }
++    var showPreview by rememberSaveable { mutableStateOf(false) }
++    var error by remember { mutableStateOf<String?>(null) }
++
++    Column(
++        modifier = modifier
++            .verticalScroll(rememberScrollState())
++            .padding(horizontal = 20.dp, vertical = 12.dp)
++    ) {
++        Row(verticalAlignment = Alignment.CenterVertically) {
++            Icon(
++                imageVector = Icons.Filled.LibraryMusic,
++                contentDescription = null,
++                tint = SonoraAccentCyan,
++                modifier = Modifier.size(22.dp)
++            )
++            Spacer(modifier = Modifier.width(10.dp))
++            Text(
++                text = "My Playlist",
++                style = MaterialTheme.typography.titleLarge,
++                fontWeight = FontWeight.Bold,
++                color = SonoraTextPrimary
++            )
++        }
++        Text(
++            text = "Your own YouTube playlist, one tap away",
++            style = MaterialTheme.typography.bodySmall,
++            color = SonoraTextSecondary
++        )
++        Spacer(modifier = Modifier.height(18.dp))
++
++        if (editing || savedId == null) {
++            Card(
++                modifier = Modifier.fillMaxWidth(),
++                shape = RoundedCornerShape(16.dp),
++                colors = CardDefaults.cardColors(containerColor = SonoraSurface),
++                border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorder)
++            ) {
++                Column(modifier = Modifier.padding(16.dp)) {
++                    Text(
++                        text = "Paste your playlist link",
++                        style = MaterialTheme.typography.titleSmall,
++                        fontWeight = FontWeight.Bold,
++                        color = SonoraTextPrimary
++                    )
++                    Spacer(modifier = Modifier.height(4.dp))
++                    Text(
++                        text = "Example: https://www.youtube.com/playlist?list=PLxxxxxxxx (YouTube or YouTube Music links both work)",
++                        style = MaterialTheme.typography.bodySmall,
++                        color = SonoraTextSecondary
++                    )
++                    Spacer(modifier = Modifier.height(12.dp))
++                    OutlinedTextField(
++                        value = input,
++                        onValueChange = {
++                            input = it
++                            error = null
++                        },
++                        singleLine = true,
++                        placeholder = { Text("youtube.com/playlist?list=...", fontSize = 12.sp) },
++                        isError = error != null,
++                        supportingText = if (error != null) { { Text(error ?: "") } } else null,
++                        colors = OutlinedTextFieldDefaults.colors(
++                            focusedTextColor = SonoraTextPrimary,
++                            unfocusedTextColor = SonoraTextPrimary,
++                            focusedBorderColor = SonoraAccentCyan,
++                            unfocusedBorderColor = SonoraBorderHighlight,
++                            cursorColor = SonoraAccentCyan
++                        ),
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .testTag("playlist_input")
++                    )
++                    Spacer(modifier = Modifier.height(12.dp))
++                    Button(
++                        onClick = {
++                            val id = extractPlaylistId(input)
++                            if (id == null) {
++                                error = "That is not a YouTube playlist link (it must contain list=...)"
++                            } else {
++                                viewModel.setPlaylistUrl("https://www.youtube.com/playlist?list=$id")
++                                editing = false
++                                error = null
++                            }
++                        },
++                        shape = RoundedCornerShape(100.dp),
++                        colors = ButtonDefaults.buttonColors(
++                            containerColor = SonoraAccentCyan,
++                            contentColor = SonoraBackground
++                        ),
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .testTag("btn_save_playlist")
++                    ) {
++                        Text("Save playlist", fontWeight = FontWeight.Bold, fontSize = 13.sp)
++                    }
++                }
++            }
++        } else {
++            val id: String = savedId ?: ""
++            Card(
++                modifier = Modifier.fillMaxWidth(),
++                shape = RoundedCornerShape(16.dp),
++                colors = CardDefaults.cardColors(containerColor = SonoraSurface),
++                border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorder)
++            ) {
++                Column(modifier = Modifier.padding(16.dp)) {
++                    Row(
++                        modifier = Modifier.fillMaxWidth(),
++                        verticalAlignment = Alignment.CenterVertically,
++                        horizontalArrangement = Arrangement.SpaceBetween
++                    ) {
++                        Column(modifier = Modifier.weight(1f)) {
++                            Text(
++                                text = "Saved playlist",
++                                style = MaterialTheme.typography.titleSmall,
++                                fontWeight = FontWeight.Bold,
++                                color = SonoraTextPrimary
++                            )
++                            Text(
++                                text = id,
++                                style = MaterialTheme.typography.labelSmall,
++                                color = SonoraTextMuted,
++                                maxLines = 1
++                            )
++                        }
++                        IconButton(
++                            onClick = {
++                                input = savedUrl
++                                editing = true
++                            },
++                            modifier = Modifier.testTag("btn_edit_playlist")
++                        ) {
++                            Icon(
++                                imageVector = Icons.Filled.Edit,
++                                contentDescription = "Change playlist",
++                                tint = SonoraTextSecondary
++                            )
++                        }
++                    }
++
++                    Spacer(modifier = Modifier.height(14.dp))
++
++                    Button(
++                        onClick = {
++                            openLink(
++                                context,
++                                "https://music.youtube.com/playlist?list=$id",
++                                "com.google.android.apps.youtube.music"
++                            )
++                        },
++                        shape = RoundedCornerShape(100.dp),
++                        colors = ButtonDefaults.buttonColors(
++                            containerColor = SonoraAccentCyan,
++                            contentColor = SonoraBackground
++                        ),
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .testTag("btn_play_ytmusic")
++                    ) {
++                        Icon(Icons.Filled.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
++                        Spacer(modifier = Modifier.width(8.dp))
++                        Text("Play in YouTube Music", fontWeight = FontWeight.Bold, fontSize = 13.sp)
++                    }
++                    Spacer(modifier = Modifier.height(8.dp))
++                    OutlinedButton(
++                        onClick = {
++                            openLink(
++                                context,
++                                "https://www.youtube.com/playlist?list=$id",
++                                "com.google.android.youtube"
++                            )
++                        },
++                        shape = RoundedCornerShape(100.dp),
++                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SonoraTextPrimary),
++                        border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorderHighlight),
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .testTag("btn_open_youtube")
++                    ) {
++                        Icon(Icons.Filled.OndemandVideo, contentDescription = null, modifier = Modifier.size(18.dp))
++                        Spacer(modifier = Modifier.width(8.dp))
++                        Text("Open in YouTube", fontSize = 13.sp)
++                    }
++                    Spacer(modifier = Modifier.height(8.dp))
++                    OutlinedButton(
++                        onClick = { showPreview = !showPreview },
++                        shape = RoundedCornerShape(100.dp),
++                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SonoraTextPrimary),
++                        border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorderHighlight),
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .testTag("btn_preview_playlist")
++                    ) {
++                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
++                        Spacer(modifier = Modifier.width(8.dp))
++                        Text(if (showPreview) "Hide in-app player" else "Preview inside Sonora", fontSize = 13.sp)
++                    }
++                }
++            }
++
++            Spacer(modifier = Modifier.height(12.dp))
++            Text(
++                text = "Tip: play it in YouTube Music or YouTube and your Sonora widgets will show the cover and control it (play / pause / next). The in-app preview is only a mini player and widgets can't control it.",
++                style = MaterialTheme.typography.labelSmall,
++                color = SonoraTextSecondary
++            )
++
++            if (showPreview) {
++                Spacer(modifier = Modifier.height(12.dp))
++                PlaylistWebPlayer(playlistId = id)
++                Text(
++                    text = "If a video says it can't be played here, the owner blocked embedding. Use the buttons above.",
++                    style = MaterialTheme.typography.labelSmall,
++                    color = SonoraTextMuted,
++                    modifier = Modifier.padding(top = 6.dp)
++                )
++            }
++        }
++        Spacer(modifier = Modifier.height(24.dp))
++    }
++}
++
++@Composable
++private fun PlaylistWebPlayer(playlistId: String) {
++    AndroidView(
++        factory = { ctx ->
++            WebView(ctx).apply {
++                settings.javaScriptEnabled = true
++                settings.domStorageEnabled = true
++                settings.mediaPlaybackRequiresUserGesture = false
++                webChromeClient = WebChromeClient()
++                webViewClient = WebViewClient()
++                setBackgroundColor(android.graphics.Color.BLACK)
++                val html = "<html><body style=\"margin:0;background:#000\">" +
++                    "<iframe style=\"position:absolute;top:0;left:0;width:100%;height:100%\" " +
++                    "src=\"https://www.youtube.com/embed/videoseries?list=" + playlistId + "&playsinline=1\" " +
++                    "frameborder=\"0\" allow=\"autoplay; encrypted-media; picture-in-picture\" allowfullscreen>" +
++                    "</iframe></body></html>"
++                loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
++            }
++        },
++        onRelease = { it.destroy() },
++        modifier = Modifier
++            .fillMaxWidth()
++            .height(220.dp)
++            .testTag("playlist_webview")
++    )
++}
+diff --git a/app/src/main/java/com/example/ui/components/StudioExtras.kt b/app/src/main/java/com/example/ui/components/StudioExtras.kt
+new file mode 100644
+index 0000000..6ea6cc6
+--- /dev/null
++++ b/app/src/main/java/com/example/ui/components/StudioExtras.kt
+@@ -0,0 +1,365 @@
++package com.example.ui.components
++
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.Image
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.BluetoothAudio
++import androidx.compose.material.icons.filled.Headphones
++import androidx.compose.material.icons.filled.Speaker
++import androidx.compose.material.icons.filled.Usb
++import androidx.compose.material3.Icon
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Slider
++import androidx.compose.material3.SliderDefaults
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Switch
++import androidx.compose.material3.SwitchDefaults
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.asImageBitmap
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.platform.testTag
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import com.example.data.CustomArtworkManager
++import com.example.model.CoverShape
++import com.example.model.MediaTrackState
++import com.example.model.WidgetSettings
++import com.example.model.WidgetTheme
++import com.example.service.OutputDevice
++import com.example.service.OutputKind
++import com.example.service.VisualizerEngine
++import com.example.ui.SonoraViewModel
++import com.example.ui.theme.SonoraAccentCyan
++import com.example.ui.theme.SonoraAccentSilver
++import com.example.ui.theme.SonoraBackground
++import com.example.ui.theme.SonoraBorder
++import com.example.ui.theme.SonoraSurfaceVariant
++import com.example.ui.theme.SonoraTextMuted
++import com.example.ui.theme.SonoraTextPrimary
++import com.example.ui.theme.SonoraTextSecondary
++import com.example.widget.WidgetRenderer
++
++/** Second row of theme chips (Pixel + iOS Glass), shown right under the old Dark / Light / Transparent row. */
++@Composable
++fun MoreThemeRow(settings: WidgetSettings, viewModel: SonoraViewModel) {
++    Spacer(modifier = Modifier.height(8.dp))
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.spacedBy(8.dp)
++    ) {
++        ThemeChip(
++            label = "Pixel 8-bit",
++            selected = settings.theme == WidgetTheme.PIXEL,
++            onClick = { viewModel.setTheme(WidgetTheme.PIXEL) },
++            modifier = Modifier.weight(1f).testTag("theme_pixel")
++        )
++        ThemeChip(
++            label = "iOS Glass",
++            selected = settings.theme == WidgetTheme.GLASS,
++            onClick = { viewModel.setTheme(WidgetTheme.GLASS) },
++            modifier = Modifier.weight(1f).testTag("theme_glass")
++        )
++    }
++}
++
++/** Cover widget shape/size, visualiser, device badge and themed icon controls. */
++@Composable
++fun StudioExtras(
++    viewModel: SonoraViewModel,
++    settings: WidgetSettings,
++    trackState: MediaTrackState
++) {
++    val context = LocalContext.current
++    val device by viewModel.outputDevice.collectAsState()
++
++    val micPermissionLauncher = rememberLauncherForActivityResult(
++        contract = ActivityResultContracts.RequestPermission()
++    ) { granted ->
++        viewModel.setLiveVisualizer(granted)
++    }
++
++    Column(modifier = Modifier.fillMaxWidth()) {
++        ExtrasLabel("COVER WIDGET")
++        Text(
++            text = "Long-press your home screen, add the \"Sonora Cover\" widget, then style it here. Resize the widget on the home screen for a bigger cover.",
++            style = MaterialTheme.typography.bodySmall,
++            color = SonoraTextSecondary
++        )
++        Spacer(modifier = Modifier.height(12.dp))
++
++        val preview = remember(
++            trackState.albumArt,
++            settings.coverShape,
++            settings.coverSizePercent,
++            settings.cornerRadiusDp,
++            settings.useCustomArtwork
++        ) {
++            val art = if (settings.useCustomArtwork) {
++                CustomArtworkManager.loadCustomCoverBitmap(context) ?: trackState.albumArt
++            } else {
++                trackState.albumArt
++            }
++            WidgetRenderer.shapedCover(
++                context = context,
++                art = art,
++                shape = settings.coverShape,
++                canvasPx = 360,
++                sizePercent = settings.coverSizePercent,
++                cornerPercent = settings.cornerRadiusDp
++            ).asImageBitmap()
++        }
++        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
++            Image(
++                bitmap = preview,
++                contentDescription = "Cover widget preview",
++                modifier = Modifier.size(180.dp).testTag("cover_widget_preview")
++            )
++        }
++
++        Spacer(modifier = Modifier.height(12.dp))
++        Row(
++            modifier = Modifier.fillMaxWidth(),
++            horizontalArrangement = Arrangement.spacedBy(8.dp)
++        ) {
++            ThemeChip(
++                label = "Rounded",
++                selected = settings.coverShape == CoverShape.ROUNDED,
++                onClick = { viewModel.setCoverShape(CoverShape.ROUNDED) },
++                modifier = Modifier.weight(1f).testTag("shape_rounded")
++            )
++            ThemeChip(
++                label = "Circle",
++                selected = settings.coverShape == CoverShape.CIRCLE,
++                onClick = { viewModel.setCoverShape(CoverShape.CIRCLE) },
++                modifier = Modifier.weight(1f).testTag("shape_circle")
++            )
++            ThemeChip(
++                label = "Squircle",
++                selected = settings.coverShape == CoverShape.SQUIRCLE,
++                onClick = { viewModel.setCoverShape(CoverShape.SQUIRCLE) },
++                modifier = Modifier.weight(1f).testTag("shape_squircle")
++            )
++            ThemeChip(
++                label = "Pixel",
++                selected = settings.coverShape == CoverShape.PIXEL,
++                onClick = { viewModel.setCoverShape(CoverShape.PIXEL) },
++                modifier = Modifier.weight(1f).testTag("shape_pixel")
++            )
++        }
++
++        Spacer(modifier = Modifier.height(12.dp))
++        Row(
++            modifier = Modifier.fillMaxWidth(),
++            horizontalArrangement = Arrangement.SpaceBetween,
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            ExtrasLabel("COVER SIZE", bottomPadding = 0)
++            Text(
++                text = "${settings.coverSizePercent}%",
++                style = MaterialTheme.typography.bodySmall,
++                fontWeight = FontWeight.Bold,
++                color = SonoraAccentCyan
++            )
++        }
++        Slider(
++            value = settings.coverSizePercent.toFloat(),
++            onValueChange = { viewModel.setCoverSize(it.toInt()) },
++            valueRange = 40f..100f,
++            colors = SliderDefaults.colors(
++                thumbColor = SonoraAccentSilver,
++                activeTrackColor = SonoraAccentCyan,
++                inactiveTrackColor = SonoraSurfaceVariant
++            ),
++            modifier = Modifier.testTag("slider_cover_size")
++        )
++        Text(
++            text = "The \"Rounded\" shape uses the Corner Radius slider above.",
++            style = MaterialTheme.typography.labelSmall,
++            color = SonoraTextMuted
++        )
++
++        Spacer(modifier = Modifier.height(20.dp))
++        ExtrasLabel("EXTRAS")
++
++        ToggleRow(
++            title = "Audio visualiser",
++            subtitle = "Spotify-style bars on the widget and the Home screen",
++            checked = settings.showVisualizer,
++            onChange = { viewModel.setShowVisualizer(it) },
++            tag = "switch_visualizer"
++        )
++        ToggleRow(
++            title = "React to real audio (optional)",
++            subtitle = "Needs microphone permission. Home screen bars follow the actual sound; otherwise they animate smoothly",
++            checked = settings.liveVisualizer,
++            onChange = { enabled ->
++                if (enabled && !VisualizerEngine.hasPermission(context)) {
++                    micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
++                } else {
++                    viewModel.setLiveVisualizer(enabled)
++                }
++            },
++            tag = "switch_live_visualizer"
++        )
++        ToggleRow(
++            title = "Playing-on badge",
++            subtitle = "Shows Speaker / Earphones / Bluetooth name (now: ${device.label})",
++            checked = settings.showDeviceChip,
++            onChange = { viewModel.setShowDeviceChip(it) },
++            tag = "switch_device_chip"
++        )
++        ToggleRow(
++            title = "Themed control icons",
++            subtitle = "Pixel theme gets blocky 8-bit buttons, Glass gets bubble buttons",
++            checked = settings.themedIcons,
++            onChange = { viewModel.setThemedIcons(it) },
++            tag = "switch_themed_icons"
++        )
++        Text(
++            text = "The widget's visualiser is a song-specific bar pattern (like a Spotify code). It cannot animate live because home screen widgets can't run animations.",
++            style = MaterialTheme.typography.labelSmall,
++            color = SonoraTextMuted
++        )
++    }
++}
++
++@Composable
++private fun ExtrasLabel(text: String, bottomPadding: Int = 8) {
++    Text(
++        text = text,
++        style = MaterialTheme.typography.labelMedium,
++        fontWeight = FontWeight.Bold,
++        letterSpacing = 1.sp,
++        color = SonoraTextMuted,
++        modifier = Modifier.padding(bottom = bottomPadding.dp)
++    )
++}
++
++@Composable
++private fun ToggleRow(
++    title: String,
++    subtitle: String,
++    checked: Boolean,
++    onChange: (Boolean) -> Unit,
++    tag: String
++) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(vertical = 6.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
++            Text(
++                text = title,
++                style = MaterialTheme.typography.bodyMedium,
++                fontWeight = FontWeight.SemiBold,
++                color = SonoraTextPrimary
++            )
++            Text(
++                text = subtitle,
++                style = MaterialTheme.typography.labelSmall,
++                color = SonoraTextSecondary
++            )
++        }
++        Switch(
++            checked = checked,
++            onCheckedChange = onChange,
++            colors = SwitchDefaults.colors(
++                checkedThumbColor = SonoraBackground,
++                checkedTrackColor = SonoraAccentCyan,
++                uncheckedThumbColor = SonoraTextMuted,
++                uncheckedTrackColor = SonoraSurfaceVariant
++            ),
++            modifier = Modifier.testTag(tag)
++        )
++    }
++}
++
++/** Device badge + visualiser shown on the Home tab under the cover. */
++@Composable
++fun HomeLiveExtras(
++    trackState: MediaTrackState,
++    settings: WidgetSettings,
++    device: OutputDevice
++) {
++    if (!settings.showVisualizer && !settings.showDeviceChip) return
++
++    Column(
++        modifier = Modifier.fillMaxWidth(0.85f),
++        horizontalAlignment = Alignment.CenterHorizontally
++    ) {
++        Spacer(modifier = Modifier.height(16.dp))
++        if (settings.showDeviceChip) {
++            DeviceChip(device)
++        }
++        if (settings.showVisualizer) {
++            Spacer(modifier = Modifier.height(12.dp))
++            AudioVisualizerBars(
++                isPlaying = trackState.isPlaying,
++                seed = trackState.title + trackState.artist,
++                color = SonoraAccentCyan,
++                pixelStyle = settings.theme == WidgetTheme.PIXEL,
++                liveEnabled = settings.liveVisualizer,
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .height(40.dp)
++                    .testTag("home_visualizer")
++            )
++        }
++    }
++}
++
++@Composable
++fun DeviceChip(device: OutputDevice) {
++    val icon = when (device.kind) {
++        OutputKind.PHONE_SPEAKER -> Icons.Filled.Speaker
++        OutputKind.BLUETOOTH -> Icons.Filled.BluetoothAudio
++        OutputKind.USB -> Icons.Filled.Usb
++        else -> Icons.Filled.Headphones
++    }
++    Surface(
++        shape = RoundedCornerShape(100.dp),
++        color = SonoraSurfaceVariant,
++        border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorder),
++        modifier = Modifier.testTag("device_chip")
++    ) {
++        Row(
++            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Icon(
++                imageVector = icon,
++                contentDescription = null,
++                tint = SonoraAccentCyan,
++                modifier = Modifier.size(16.dp)
++            )
++            Spacer(modifier = Modifier.width(8.dp))
++            Text(
++                text = "Playing on " + device.label,
++                style = MaterialTheme.typography.labelMedium,
++                color = SonoraTextPrimary
++            )
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/widget/SonoraAppWidgetProvider.kt b/app/src/main/java/com/example/widget/SonoraAppWidgetProvider.kt
+index 93c85b8..ae91a8a 100644
+--- a/app/src/main/java/com/example/widget/SonoraAppWidgetProvider.kt
++++ b/app/src/main/java/com/example/widget/SonoraAppWidgetProvider.kt
+@@ -7,6 +7,7 @@ import android.content.ComponentName
+ import android.content.Context
+ import android.content.Intent
+ import android.graphics.Color
++import android.view.View
+ import android.widget.RemoteViews
+ import com.example.MainActivity
+ import com.example.R
+@@ -15,6 +16,7 @@ import com.example.data.SonoraPreferences
+ import com.example.model.WidgetPreset
+ import com.example.model.WidgetTheme
+ import com.example.service.MediaPlaybackManager
++import com.example.service.OutputKind
+ 
+ class SonoraAppWidgetProvider : AppWidgetProvider() {
+ 
+@@ -58,18 +60,32 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
+ 
+             val views = RemoteViews(context.packageName, layoutId)
+ 
++            val theme = settings.theme
++            val isPixel = theme == WidgetTheme.PIXEL
++            val isGlass = theme == WidgetTheme.GLASS
++            val isLight = theme == WidgetTheme.LIGHT
++
+             // Background selection
+-            val backgroundRes = when (settings.theme) {
++            val backgroundRes = when (theme) {
+                 WidgetTheme.DARK -> if (isCard) R.drawable.widget_card_background_dark else R.drawable.widget_pill_background_dark
+                 WidgetTheme.LIGHT -> if (isCard) R.drawable.widget_card_background_light else R.drawable.widget_pill_background_light
+                 WidgetTheme.TRANSPARENT -> if (isCard) R.drawable.widget_card_background_trans else R.drawable.widget_pill_background_trans
++                WidgetTheme.PIXEL -> if (isCard) R.drawable.widget_card_background_pixel else R.drawable.widget_pill_background_pixel
++                WidgetTheme.GLASS -> if (isCard) R.drawable.widget_card_background_glass else R.drawable.widget_pill_background_glass
+             }
+             views.setInt(R.id.widget_root, "setBackgroundResource", backgroundRes)
+ 
+             // Text colors
+-            val isLight = settings.theme == WidgetTheme.LIGHT
+-            val titleColor = if (isLight) Color.parseColor("#12151B") else Color.parseColor("#FFFFFF")
+-            val artistColor = if (isLight) Color.parseColor("#5B6472") else Color.parseColor("#A0A8B5")
++            val titleColor = when {
++                isLight || isPixel -> Color.parseColor("#12151B")
++                else -> Color.parseColor("#FFFFFF")
++            }
++            val artistColor = when {
++                isPixel -> Color.parseColor("#444444")
++                isLight -> Color.parseColor("#5B6472")
++                isGlass -> Color.parseColor("#D9E2EE")
++                else -> Color.parseColor("#A0A8B5")
++            }
+ 
+             views.setTextColor(R.id.widget_title, titleColor)
+             views.setTextColor(R.id.widget_artist, artistColor)
+@@ -90,13 +106,85 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
+                 views.setImageViewResource(R.id.widget_album_art, R.drawable.ic_widget_music_default)
+             }
+ 
+-            // Play/Pause icon
++            // Control icons + button backgrounds (themed)
++            val usePixelIcons = settings.themedIcons && isPixel
+             val playPauseRes = if (trackState.isPlaying) {
+-                R.drawable.ic_widget_pause
++                if (usePixelIcons) R.drawable.ic_pixel_pause else R.drawable.ic_widget_pause
+             } else {
+-                R.drawable.ic_widget_play
++                if (usePixelIcons) R.drawable.ic_pixel_play else R.drawable.ic_widget_play
+             }
+             views.setImageViewResource(R.id.widget_btn_play_pause, playPauseRes)
++            views.setImageViewResource(
++                R.id.widget_btn_prev,
++                if (usePixelIcons) R.drawable.ic_pixel_prev else R.drawable.ic_widget_prev
++            )
++            views.setImageViewResource(
++                R.id.widget_btn_next,
++                if (usePixelIcons) R.drawable.ic_pixel_next else R.drawable.ic_widget_next
++            )
++
++            // The stock icons are white; tint them so they stay visible on light / pixel themes.
++            val iconTint = if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
++            views.setInt(R.id.widget_btn_play_pause, "setColorFilter", iconTint)
++            views.setInt(R.id.widget_btn_prev, "setColorFilter", iconTint)
++            views.setInt(R.id.widget_btn_next, "setColorFilter", iconTint)
++
++            if (settings.themedIcons && (isPixel || isGlass)) {
++                val mainBg = if (isPixel) R.drawable.widget_btn_pixel_main else R.drawable.widget_btn_glass
++                val smallBg = if (isPixel) R.drawable.widget_btn_pixel_small else R.drawable.widget_btn_glass
++                views.setInt(R.id.widget_btn_play_pause, "setBackgroundResource", mainBg)
++                views.setInt(R.id.widget_btn_prev, "setBackgroundResource", smallBg)
++                views.setInt(R.id.widget_btn_next, "setBackgroundResource", smallBg)
++            } else {
++                views.setInt(R.id.widget_btn_play_pause, "setBackgroundResource", R.drawable.widget_btn_ripple)
++                views.setInt(R.id.widget_btn_prev, "setBackgroundResource", R.drawable.widget_btn_ripple)
++                views.setInt(R.id.widget_btn_next, "setBackgroundResource", R.drawable.widget_btn_ripple)
++            }
++
++            // Output device badge + visualiser strip exist only in the card layout
++            if (isCard) {
++                if (settings.showDeviceChip) {
++                    val device = MediaPlaybackManager.outputDevice.value
++                    val label = when (device.kind) {
++                        OutputKind.PHONE_SPEAKER -> "\uD83D\uDD0A Speaker"
++                        OutputKind.WIRED -> "\uD83C\uDFA7 Earphones"
++                        OutputKind.BLUETOOTH -> "\uD83C\uDFA7 " + device.label
++                        OutputKind.USB -> "\uD83C\uDFA7 USB audio"
++                        OutputKind.OTHER -> "\uD83C\uDFA7 " + device.label
++                    }
++                    views.setTextViewText(R.id.widget_device_chip, label)
++                    views.setTextColor(
++                        R.id.widget_device_chip,
++                        if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
++                    )
++                    views.setInt(
++                        R.id.widget_device_chip,
++                        "setBackgroundResource",
++                        when {
++                            isPixel -> R.drawable.widget_chip_pixel
++                            isLight -> R.drawable.widget_chip_light
++                            else -> R.drawable.widget_chip_dark
++                        }
++                    )
++                    views.setViewVisibility(R.id.widget_device_chip, View.VISIBLE)
++                } else {
++                    views.setViewVisibility(R.id.widget_device_chip, View.GONE)
++                }
++
++                if (settings.showVisualizer) {
++                    val barColor = if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
++                    val bars = WidgetRenderer.visualizerBitmap(
++                        seedText = trackState.title + trackState.artist,
++                        color = barColor,
++                        pixelStyle = isPixel,
++                        dimmed = !trackState.isPlaying
++                    )
++                    views.setImageViewBitmap(R.id.widget_visualizer, bars)
++                    views.setViewVisibility(R.id.widget_visualizer, View.VISIBLE)
++                } else {
++                    views.setViewVisibility(R.id.widget_visualizer, View.GONE)
++                }
++            }
+ 
+             // Pending Intents for controls
+             views.setOnClickPendingIntent(
+@@ -148,6 +236,7 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
+                     updateWidget(context, appWidgetManager, id)
+                 }
+             }
++            SonoraCoverWidgetProvider.updateAll(context)
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/example/widget/SonoraCoverWidgetProvider.kt b/app/src/main/java/com/example/widget/SonoraCoverWidgetProvider.kt
+new file mode 100644
+index 0000000..23b424e
+--- /dev/null
++++ b/app/src/main/java/com/example/widget/SonoraCoverWidgetProvider.kt
+@@ -0,0 +1,92 @@
++package com.example.widget
++
++import android.app.PendingIntent
++import android.appwidget.AppWidgetManager
++import android.appwidget.AppWidgetProvider
++import android.content.ComponentName
++import android.content.Context
++import android.content.Intent
++import android.os.Bundle
++import android.widget.RemoteViews
++import com.example.MainActivity
++import com.example.R
++import com.example.data.CustomArtworkManager
++import com.example.data.SonoraPreferences
++import com.example.service.MediaPlaybackManager
++import kotlin.math.min
++
++/** A second widget that shows ONLY the live cover, with a custom shape and size. */
++class SonoraCoverWidgetProvider : AppWidgetProvider() {
++
++    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
++        super.onUpdate(context, appWidgetManager, appWidgetIds)
++        for (id in appWidgetIds) updateWidget(context, appWidgetManager, id)
++    }
++
++    override fun onAppWidgetOptionsChanged(
++        context: Context,
++        appWidgetManager: AppWidgetManager,
++        appWidgetId: Int,
++        newOptions: Bundle?
++    ) {
++        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
++        updateWidget(context, appWidgetManager, appWidgetId)
++    }
++
++    companion object {
++        private const val MAX_CANVAS_PX = 640
++
++        fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
++            try {
++                val settings = SonoraPreferences(context).loadSettings()
++                val track = MediaPlaybackManager.trackState.value
++
++                val options = appWidgetManager.getAppWidgetOptions(widgetId)
++                val wDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
++                val hDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
++                val density = context.resources.displayMetrics.density
++                val canvasPx = (min(wDp, hDp) * density).toInt().coerceIn(120, MAX_CANVAS_PX)
++
++                val art = if (settings.useCustomArtwork) {
++                    CustomArtworkManager.loadCustomCoverBitmap(context) ?: track.albumArt
++                } else {
++                    track.albumArt
++                }
++
++                val bitmap = WidgetRenderer.shapedCover(
++                    context = context,
++                    art = art,
++                    shape = settings.coverShape,
++                    canvasPx = canvasPx,
++                    sizePercent = settings.coverSizePercent,
++                    cornerPercent = settings.cornerRadiusDp
++                )
++
++                val views = RemoteViews(context.packageName, R.layout.widget_sonora_cover)
++                views.setImageViewBitmap(R.id.widget_cover_art, bitmap)
++
++                val appIntent = Intent(context, MainActivity::class.java).apply {
++                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
++                }
++                val pending = PendingIntent.getActivity(
++                    context,
++                    1000 + widgetId,
++                    appIntent,
++                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
++                )
++                views.setOnClickPendingIntent(R.id.widget_cover_root, pending)
++
++                appWidgetManager.updateAppWidget(widgetId, views)
++            } catch (t: Throwable) {
++                // never crash the process because of a widget
++                t.printStackTrace()
++            }
++        }
++
++        fun updateAll(context: Context) {
++            val manager = AppWidgetManager.getInstance(context)
++            val ids = manager.getAppWidgetIds(ComponentName(context, SonoraCoverWidgetProvider::class.java))
++            for (id in ids) updateWidget(context, manager, id)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/widget/WidgetRenderer.kt b/app/src/main/java/com/example/widget/WidgetRenderer.kt
+new file mode 100644
+index 0000000..eb10f2c
+--- /dev/null
++++ b/app/src/main/java/com/example/widget/WidgetRenderer.kt
+@@ -0,0 +1,210 @@
++package com.example.widget
++
++import android.content.Context
++import android.graphics.Bitmap
++import android.graphics.BitmapShader
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.Matrix
++import android.graphics.Paint
++import android.graphics.Path
++import android.graphics.RectF
++import android.graphics.Shader
++import androidx.core.content.ContextCompat
++import com.example.R
++import com.example.model.CoverShape
++import kotlin.math.abs
++import kotlin.math.cos
++import kotlin.math.min
++import kotlin.math.pow
++import kotlin.math.sign
++import kotlin.math.sin
++
++/** Draws bitmaps for the home screen widgets (RemoteViews can only show bitmaps, not custom drawing). */
++object WidgetRenderer {
++
++    // ------------------------------------------------------------------
++    // Spotify-code style bar strip
++    // ------------------------------------------------------------------
++    fun visualizerBitmap(
++        seedText: String,
++        color: Int,
++        pixelStyle: Boolean,
++        dimmed: Boolean,
++        widthPx: Int = 480,
++        heightPx: Int = 72
++    ): Bitmap {
++        val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
++        val canvas = Canvas(bmp)
++        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
++            this.color = color
++            alpha = if (dimmed) 70 else 150
++            strokeCap = if (pixelStyle) Paint.Cap.BUTT else Paint.Cap.ROUND
++        }
++        val count = 36
++        val slot = widthPx.toFloat() / count
++        val barWidth = slot * 0.55f
++        paint.strokeWidth = barWidth
++        val rnd = java.util.Random(seedText.hashCode().toLong())
++        var prev = 0.5f
++        val minH = heightPx * 0.12f
++        val blocks = 8
++        for (i in 0 until count) {
++            prev = prev * 0.45f + rnd.nextFloat() * 0.55f
++            var h = minH + (heightPx - minH) * prev.coerceIn(0f, 1f)
++            if (pixelStyle) {
++                val step = heightPx.toFloat() / blocks
++                h = (Math.round(h / step).coerceAtLeast(1)) * step
++            }
++            val x = slot * i + slot / 2f
++            val top = (heightPx - h) / 2f
++            val bottom = top + h
++            val inset = if (pixelStyle) 0f else barWidth / 2f
++            canvas.drawLine(x, top + inset, x, bottom - inset, paint)
++        }
++        return bmp
++    }
++
++    // ------------------------------------------------------------------
++    // Shaped cover for the standalone Cover widget
++    // ------------------------------------------------------------------
++    fun shapedCover(
++        context: Context,
++        art: Bitmap?,
++        shape: CoverShape,
++        canvasPx: Int,
++        sizePercent: Int,
++        cornerPercent: Int
++    ): Bitmap {
++        val out = Bitmap.createBitmap(canvasPx, canvasPx, Bitmap.Config.ARGB_8888)
++        val canvas = Canvas(out)
++
++        // keep some room for the hard shadow of the pixel shape
++        val usable = if (shape == CoverShape.PIXEL) 0.92f else 1f
++        val side = (canvasPx * (sizePercent.coerceIn(30, 100) / 100f) * usable).toInt().coerceAtLeast(16)
++        val left = (canvasPx - side) / 2f
++        val top = (canvasPx - side) / 2f
++
++        val source = art ?: placeholder(context, side)
++        val minSide = min(source.width, source.height)
++        val cropped = Bitmap.createBitmap(
++            source,
++            (source.width - minSide) / 2,
++            (source.height - minSide) / 2,
++            minSide,
++            minSide
++        )
++        val scaled = if (shape == CoverShape.PIXEL) {
++            // genuine pixel-art look: shrink with averaging, blow up WITHOUT smoothing
++            val tiny = Bitmap.createScaledBitmap(cropped, 40, 40, true)
++            Bitmap.createScaledBitmap(tiny, side, side, false)
++        } else {
++            Bitmap.createScaledBitmap(cropped, side, side, true)
++        }
++
++        val path = buildPath(shape, left, top, side.toFloat(), cornerPercent)
++
++        if (shape == CoverShape.PIXEL) {
++            val shadow = Path(path)
++            shadow.offset(side * 0.045f, side * 0.045f)
++            canvas.drawPath(shadow, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#111111") })
++        }
++
++        val shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
++        val matrix = Matrix()
++        matrix.postTranslate(left, top)
++        shader.setLocalMatrix(matrix)
++        canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
++            this.shader = shader
++            isFilterBitmap = shape != CoverShape.PIXEL
++        })
++
++        if (shape == CoverShape.PIXEL) {
++            canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
++                style = Paint.Style.STROKE
++                strokeWidth = side * 0.03f
++                strokeJoin = Paint.Join.MITER
++                color = Color.parseColor("#111111")
++            })
++        }
++        return out
++    }
++
++    private fun placeholder(context: Context, side: Int): Bitmap {
++        val bmp = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
++        val canvas = Canvas(bmp)
++        canvas.drawColor(Color.parseColor("#1E232B"))
++        val d = ContextCompat.getDrawable(context, R.drawable.ic_widget_music_default)
++        if (d != null) {
++            val pad = side / 4
++            d.setBounds(pad, pad, side - pad, side - pad)
++            d.draw(canvas)
++        }
++        return bmp
++    }
++
++    private fun buildPath(shape: CoverShape, left: Float, top: Float, side: Float, cornerPercent: Int): Path {
++        val rect = RectF(left, top, left + side, top + side)
++        val path = Path()
++        when (shape) {
++            CoverShape.CIRCLE -> path.addOval(rect, Path.Direction.CW)
++            CoverShape.ROUNDED -> {
++                val r = side * (cornerPercent.coerceIn(8, 50) / 100f)
++                path.addRoundRect(rect, r, r, Path.Direction.CW)
++            }
++            CoverShape.SQUIRCLE -> {
++                // superellipse |x|^4 + |y|^4 = 1
++                val cx = rect.centerX()
++                val cy = rect.centerY()
++                val a = side / 2f
++                var first = true
++                var deg = 0
++                while (deg <= 360) {
++                    val t = Math.toRadians(deg.toDouble())
++                    val c = cos(t)
++                    val s = sin(t)
++                    val x = cx + (a * sign(c) * abs(c).pow(0.5)).toFloat()
++                    val y = cy + (a * sign(s) * abs(s).pow(0.5)).toFloat()
++                    if (first) {
++                        path.moveTo(x, y)
++                        first = false
++                    } else {
++                        path.lineTo(x, y)
++                    }
++                    deg += 3
++                }
++                path.close()
++            }
++            CoverShape.PIXEL -> {
++                val u = side / 16f
++                val l = left
++                val t = top
++                val r = left + side
++                val b = top + side
++                // stepped (8-bit) corners
++                path.moveTo(l + 2 * u, t)
++                path.lineTo(r - 2 * u, t)
++                path.lineTo(r - 2 * u, t + u)
++                path.lineTo(r - u, t + u)
++                path.lineTo(r - u, t + 2 * u)
++                path.lineTo(r, t + 2 * u)
++                path.lineTo(r, b - 2 * u)
++                path.lineTo(r - u, b - 2 * u)
++                path.lineTo(r - u, b - u)
++                path.lineTo(r - 2 * u, b - u)
++                path.lineTo(r - 2 * u, b)
++                path.lineTo(l + 2 * u, b)
++                path.lineTo(l + 2 * u, b - u)
++                path.lineTo(l + u, b - u)
++                path.lineTo(l + u, b - 2 * u)
++                path.lineTo(l, b - 2 * u)
++                path.lineTo(l, t + 2 * u)
++                path.lineTo(l + u, t + 2 * u)
++                path.lineTo(l + u, t + u)
++                path.lineTo(l + 2 * u, t + u)
++                path.close()
++            }
++        }
++        return path
++    }
++}
+diff --git a/app/src/main/res/drawable/ic_pixel_next.xml b/app/src/main/res/drawable/ic_pixel_next.xml
+new file mode 100644
+index 0000000..3bedf41
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_pixel_next.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF111111"
++        android:pathData="M5,6h2v12H5z M7,8h2v8H7z M9,10h2v4H9z M15,6h3v12H15z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_pixel_pause.xml b/app/src/main/res/drawable/ic_pixel_pause.xml
+new file mode 100644
+index 0000000..2d16f60
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_pixel_pause.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF111111"
++        android:pathData="M6,5h4v14H6z M14,5h4v14H14z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_pixel_play.xml b/app/src/main/res/drawable/ic_pixel_play.xml
+new file mode 100644
+index 0000000..78fca2b
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_pixel_play.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF111111"
++        android:pathData="M7,4h2v16H7z M9,6h2v12H9z M11,8h2v8H11z M13,10h2v4H13z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_pixel_prev.xml b/app/src/main/res/drawable/ic_pixel_prev.xml
+new file mode 100644
+index 0000000..b4dcd0a
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_pixel_prev.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF111111"
++        android:pathData="M6,6h3v12H6z M17,6h2v12H17z M15,8h2v8H15z M13,10h2v4H13z" />
++</vector>
+diff --git a/app/src/main/res/drawable/widget_btn_glass.xml b/app/src/main/res/drawable/widget_btn_glass.xml
+new file mode 100644
+index 0000000..2577f9a
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_btn_glass.xml
+@@ -0,0 +1,9 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="oval">
++    <gradient
++        android:angle="270"
++        android:endColor="#26FFFFFF"
++        android:startColor="#66FFFFFF" />
++    <stroke android:width="1dp" android:color="#99FFFFFF" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_btn_pixel_main.xml b/app/src/main/res/drawable/widget_btn_pixel_main.xml
+new file mode 100644
+index 0000000..6893817
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_btn_pixel_main.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++    <solid android:color="#FF4D4D" />
++    <stroke android:width="2dp" android:color="#111111" />
++    <corners android:radius="2dp" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_btn_pixel_small.xml b/app/src/main/res/drawable/widget_btn_pixel_small.xml
+new file mode 100644
+index 0000000..8359634
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_btn_pixel_small.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++    <solid android:color="#F2F2F2" />
++    <stroke android:width="2dp" android:color="#111111" />
++    <corners android:radius="2dp" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_btn_ripple.xml b/app/src/main/res/drawable/widget_btn_ripple.xml
+new file mode 100644
+index 0000000..ef50940
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_btn_ripple.xml
+@@ -0,0 +1,3 @@
++<?xml version="1.0" encoding="utf-8"?>
++<ripple xmlns:android="http://schemas.android.com/apk/res/android"
++    android:color="#33FFFFFF" />
+diff --git a/app/src/main/res/drawable/widget_card_background_glass.xml b/app/src/main/res/drawable/widget_card_background_glass.xml
+new file mode 100644
+index 0000000..cd25c50
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_card_background_glass.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <!-- frosted body -->
++    <item>
++        <shape android:shape="rectangle">
++            <gradient
++                android:angle="270"
++                android:endColor="#1FFFFFFF"
++                android:startColor="#4DFFFFFF" />
++            <stroke android:width="1dp" android:color="#80FFFFFF" />
++            <corners android:radius="28dp" />
++        </shape>
++    </item>
++    <!-- inner glossy rim -->
++    <item android:bottom="2dp" android:left="2dp" android:right="2dp" android:top="2dp">
++        <shape android:shape="rectangle">
++            <stroke android:width="1dp" android:color="#26FFFFFF" />
++            <corners android:radius="28dp" />
++        </shape>
++    </item>
++</layer-list>
+diff --git a/app/src/main/res/drawable/widget_card_background_pixel.xml b/app/src/main/res/drawable/widget_card_background_pixel.xml
+new file mode 100644
+index 0000000..f2fb395
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_card_background_pixel.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <!-- hard 8-bit drop shadow -->
++    <item android:left="4dp" android:top="4dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#111111" />
++            <corners android:radius="4dp" />
++        </shape>
++    </item>
++    <!-- chunky bordered body -->
++    <item android:right="4dp" android:bottom="4dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#FFFFFF" />
++            <stroke android:width="3dp" android:color="#111111" />
++            <corners android:radius="4dp" />
++        </shape>
++    </item>
++</layer-list>
+diff --git a/app/src/main/res/drawable/widget_chip_dark.xml b/app/src/main/res/drawable/widget_chip_dark.xml
+new file mode 100644
+index 0000000..a9be0e1
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_chip_dark.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <solid android:color="#66000000" />
++    <stroke android:width="1dp" android:color="#40FFFFFF" />
++    <corners android:radius="8dp" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_chip_light.xml b/app/src/main/res/drawable/widget_chip_light.xml
+new file mode 100644
+index 0000000..6984053
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_chip_light.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <solid android:color="#E6FFFFFF" />
++    <stroke android:width="1dp" android:color="#26000000" />
++    <corners android:radius="8dp" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_chip_pixel.xml b/app/src/main/res/drawable/widget_chip_pixel.xml
+new file mode 100644
+index 0000000..28f1db6
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_chip_pixel.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <solid android:color="#FFFFFF" />
++    <stroke android:width="2dp" android:color="#111111" />
++    <corners android:radius="2dp" />
++</shape>
+diff --git a/app/src/main/res/drawable/widget_pill_background_glass.xml b/app/src/main/res/drawable/widget_pill_background_glass.xml
+new file mode 100644
+index 0000000..666aaf3
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_pill_background_glass.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <!-- frosted body -->
++    <item>
++        <shape android:shape="rectangle">
++            <gradient
++                android:angle="270"
++                android:endColor="#1FFFFFFF"
++                android:startColor="#4DFFFFFF" />
++            <stroke android:width="1dp" android:color="#80FFFFFF" />
++            <corners android:radius="100dp" />
++        </shape>
++    </item>
++    <!-- inner glossy rim -->
++    <item android:bottom="2dp" android:left="2dp" android:right="2dp" android:top="2dp">
++        <shape android:shape="rectangle">
++            <stroke android:width="1dp" android:color="#26FFFFFF" />
++            <corners android:radius="100dp" />
++        </shape>
++    </item>
++</layer-list>
+diff --git a/app/src/main/res/drawable/widget_pill_background_pixel.xml b/app/src/main/res/drawable/widget_pill_background_pixel.xml
+new file mode 100644
+index 0000000..f804b0c
+--- /dev/null
++++ b/app/src/main/res/drawable/widget_pill_background_pixel.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="utf-8"?>
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:left="3dp" android:top="3dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#111111" />
++            <corners android:radius="4dp" />
++        </shape>
++    </item>
++    <item android:right="3dp" android:bottom="3dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#FFFFFF" />
++            <stroke android:width="3dp" android:color="#111111" />
++            <corners android:radius="4dp" />
++        </shape>
++    </item>
++</layer-list>
+diff --git a/app/src/main/res/layout/widget_sonora_card.xml b/app/src/main/res/layout/widget_sonora_card.xml
+index f9fff05..a95c7ae 100644
+--- a/app/src/main/res/layout/widget_sonora_card.xml
++++ b/app/src/main/res/layout/widget_sonora_card.xml
+@@ -1,12 +1,29 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:id="@+id/widget_root"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+-    android:background="@drawable/widget_card_background_dark"
+-    android:gravity="center_vertical"
+-    android:orientation="horizontal"
+-    android:padding="12dp">
++    android:background="@drawable/widget_card_background_dark">
++
++    <!-- Visualiser strip: sits behind the control buttons (bottom row, right of the cover) -->
++    <ImageView
++        android:id="@+id/widget_visualizer"
++        android:layout_width="match_parent"
++        android:layout_height="36dp"
++        android:layout_gravity="bottom|end"
++        android:layout_marginStart="92dp"
++        android:layout_marginEnd="12dp"
++        android:layout_marginBottom="12dp"
++        android:contentDescription="@null"
++        android:scaleType="fitXY"
++        android:visibility="gone" />
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:gravity="center_vertical"
++        android:orientation="horizontal"
++        android:padding="12dp">
+ 
+     <ImageView
+         android:id="@+id/widget_album_art"
+@@ -86,4 +103,26 @@
+         </LinearLayout>
+     </LinearLayout>
+ 
+-</LinearLayout>
++    </LinearLayout>
++
++    <!-- Output device badge, sits on the bottom-left corner of the cover -->
++    <TextView
++        android:id="@+id/widget_device_chip"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_gravity="bottom|start"
++        android:layout_marginStart="16dp"
++        android:layout_marginBottom="16dp"
++        android:background="@drawable/widget_chip_dark"
++        android:ellipsize="end"
++        android:maxLines="1"
++        android:maxWidth="64dp"
++        android:paddingStart="5dp"
++        android:paddingTop="1dp"
++        android:paddingEnd="5dp"
++        android:paddingBottom="1dp"
++        android:textColor="#FFFFFF"
++        android:textSize="9sp"
++        android:visibility="gone" />
++
++</FrameLayout>
+diff --git a/app/src/main/res/layout/widget_sonora_cover.xml b/app/src/main/res/layout/widget_sonora_cover.xml
+new file mode 100644
+index 0000000..32d10bf
+--- /dev/null
++++ b/app/src/main/res/layout/widget_sonora_cover.xml
+@@ -0,0 +1,13 @@
++<?xml version="1.0" encoding="utf-8"?>
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:id="@+id/widget_cover_root"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent">
++
++    <ImageView
++        android:id="@+id/widget_cover_art"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:contentDescription="@string/app_name"
++        android:scaleType="fitCenter" />
++</FrameLayout>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 829023e..515674c 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,3 +1,5 @@
+ <resources>
+     <string name="app_name">SONORA</string>
++    <string name="cover_widget_label">Sonora Cover</string>
++    <string name="cover_widget_description">Live album cover with custom shape and size</string>
+ </resources>
+diff --git a/app/src/main/res/xml/sonora_cover_widget_info.xml b/app/src/main/res/xml/sonora_cover_widget_info.xml
+new file mode 100644
+index 0000000..8e05a38
+--- /dev/null
++++ b/app/src/main/res/xml/sonora_cover_widget_info.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
++    android:minWidth="110dp"
++    android:minHeight="110dp"
++    android:targetCellWidth="2"
++    android:targetCellHeight="2"
++    android:updatePeriodMillis="0"
++    android:initialLayout="@layout/widget_sonora_cover"
++    android:resizeMode="horizontal|vertical"
++    android:widgetCategory="home_screen"
++    android:description="@string/cover_widget_description" />
