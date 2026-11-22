@@ -186,10 +186,10 @@ fun CustomizeSection(
                 modifier = Modifier.weight(1f).testTag("theme_light")
             )
             ThemeChip(
-                label = "Transparent",
-                selected = widgetSettings.theme == WidgetTheme.TRANSPARENT,
-                onClick = { viewModel.setTheme(WidgetTheme.TRANSPARENT) },
-                modifier = Modifier.weight(1f).testTag("theme_transparent")
+                label = "Default",
+                selected = widgetSettings.theme == WidgetTheme.DEFAULT,
+                onClick = { viewModel.setTheme(WidgetTheme.DEFAULT) },
+                modifier = Modifier.weight(1f).testTag("theme_default")
             )
         }
         MoreThemeRow(settings = widgetSettings, viewModel = viewModel)
@@ -398,13 +398,13 @@ fun WidgetLivePreview(
     val baseColor = when (settings.theme) {
         WidgetTheme.DARK -> Color(0xFF12151B)
         WidgetTheme.LIGHT -> Color(0xFFFFFFFF)
-        WidgetTheme.TRANSPARENT -> Color(0xFF000000)
+        WidgetTheme.DEFAULT -> Color(0xFF1E232B)
         WidgetTheme.PIXEL -> Color(0xFFFFFFFF)
         WidgetTheme.GLASS -> Color(0xFFFFFFFF)
     }
 
     val alpha = when (settings.theme) {
-        WidgetTheme.TRANSPARENT -> (settings.opacityPercent / 100f * 0.45f)
+        WidgetTheme.DEFAULT -> 1f
         WidgetTheme.GLASS -> (settings.opacityPercent / 100f * 0.30f)
         else -> (settings.opacityPercent / 100f)
     }
@@ -425,7 +425,7 @@ fun WidgetLivePreview(
     val borderModifier = if (settings.showBlurBorder) {
         val borderColor = when (settings.theme) {
             WidgetTheme.LIGHT -> Color(0x26000000)
-            WidgetTheme.TRANSPARENT -> Color(0x66FFFFFF)
+            WidgetTheme.DEFAULT -> Color(0x66FFFFFF)
             WidgetTheme.DARK -> Color(0x33FFFFFF)
             WidgetTheme.PIXEL -> Color(0xFF111111)
             WidgetTheme.GLASS -> Color(0x99FFFFFF)

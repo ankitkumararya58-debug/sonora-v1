@@ -8,6 +8,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import com.example.model.MediaTrackState
@@ -229,6 +230,18 @@ object MediaPlaybackManager {
         )
 
         notifyStateChanged()
+    }
+
+    /** Song position right now (extrapolated from the last playback update while playing). */
+    fun currentPositionMs(): Long {
+        val state = _trackState.value
+        val ps = activeController?.playbackState ?: return state.positionMs
+        return if (ps.state == PlaybackState.STATE_PLAYING) {
+            val delta = SystemClock.elapsedRealtime() - ps.lastPositionUpdateTime
+            (ps.position + (delta * ps.playbackSpeed).toLong()).coerceAtLeast(0L)
+        } else {
+            ps.position.coerceAtLeast(0L)
+        }
     }
 
     private fun notifyStateChanged() {

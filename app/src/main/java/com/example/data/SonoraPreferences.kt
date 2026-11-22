@@ -27,7 +27,12 @@ class SonoraPreferences(private val context: Context) {
 
         val themeStr = prefs.getString(KEY_THEME, WidgetTheme.DARK.name)
         val theme = try {
-            WidgetTheme.valueOf(themeStr ?: WidgetTheme.DARK.name)
+            if (themeStr == "TRANSPARENT") {
+                // the old "Transparent" theme was replaced by "Default"
+                WidgetTheme.DEFAULT
+            } else {
+                WidgetTheme.valueOf(themeStr ?: WidgetTheme.DARK.name)
+            }
         } catch (e: Exception) {
             WidgetTheme.DARK
         }
@@ -54,6 +59,8 @@ class SonoraPreferences(private val context: Context) {
             showDeviceChip = prefs.getBoolean(KEY_DEVICE_CHIP, true),
             themedIcons = prefs.getBoolean(KEY_THEMED_ICONS, true),
             liveVisualizer = prefs.getBoolean(KEY_LIVE_VIZ, false),
+            useCoverWidgetArtwork = prefs.getBoolean(KEY_COVER_WIDGET_CUSTOM, false) &&
+                CustomArtworkManager.hasCoverWidgetCover(context),
             playlistUrl = prefs.getString(KEY_PLAYLIST_URL, "") ?: ""
         )
     }
@@ -90,6 +97,13 @@ class SonoraPreferences(private val context: Context) {
     fun saveThemedIcons(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_THEMED_ICONS, enabled).apply()
         _settingsFlow.value = _settingsFlow.value.copy(themedIcons = enabled)
+    }
+
+    fun saveUseCoverWidgetArtwork(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COVER_WIDGET_CUSTOM, enabled).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(
+            useCoverWidgetArtwork = enabled && CustomArtworkManager.hasCoverWidgetCover(context)
+        )
     }
 
     fun saveLiveVisualizer(enabled: Boolean) {
@@ -161,5 +175,6 @@ class SonoraPreferences(private val context: Context) {
         private const val KEY_THEMED_ICONS = "themed_icons"
         private const val KEY_PLAYLIST_URL = "playlist_url"
         private const val KEY_LIVE_VIZ = "live_visualizer"
+        private const val KEY_COVER_WIDGET_CUSTOM = "cover_widget_use_custom"
     }
 }

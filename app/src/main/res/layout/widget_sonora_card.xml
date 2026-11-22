@@ -5,15 +5,11 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_card_background_dark">
 
-    <!-- Visualiser strip: sits behind the control buttons (bottom row, right of the cover) -->
+    <!-- drawn in code for the Pixel theme (notched corners) -->
     <ImageView
-        android:id="@+id/widget_visualizer"
+        android:id="@+id/widget_bg"
         android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:layout_gravity="bottom|end"
-        android:layout_marginStart="92dp"
-        android:layout_marginEnd="12dp"
-        android:layout_marginBottom="12dp"
+        android:layout_height="match_parent"
         android:contentDescription="@null"
         android:scaleType="fitXY"
         android:visibility="gone" />
@@ -25,87 +21,108 @@
         android:orientation="horizontal"
         android:padding="12dp">
 
-    <ImageView
-        android:id="@+id/widget_album_art"
-        android:layout_width="68dp"
-        android:layout_height="68dp"
-        android:contentDescription="@string/app_name"
-        android:scaleType="centerCrop"
-        android:src="@drawable/ic_widget_music_default" />
-
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="No Song Playing"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/widget_artist"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="SONORA"
-            android:textColor="#A0A8B5"
-            android:textSize="12sp" />
+        <ImageView
+            android:id="@+id/widget_album_art"
+            android:layout_width="68dp"
+            android:layout_height="68dp"
+            android:contentDescription="@string/app_name"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_widget_music_default" />
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <ImageButton
-                android:id="@+id/widget_btn_prev"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Previous"
-                android:padding="6dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_widget_prev" />
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="No Song Playing"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
 
-            <ImageButton
-                android:id="@+id/widget_btn_play_pause"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_marginStart="4dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Play or Pause"
-                android:padding="6dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_widget_play" />
+            <TextView
+                android:id="@+id/widget_artist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="SONORA"
+                android:textColor="#A0A8B5"
+                android:textSize="12sp" />
 
-            <ImageButton
-                android:id="@+id/widget_btn_next"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="4dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Next"
-                android:padding="6dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_widget_next" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/widget_btn_prev"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:background="@drawable/widget_btn_ripple"
+                    android:contentDescription="Previous"
+                    android:padding="6dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_widget_prev" />
+
+                <ImageButton
+                    android:id="@+id/widget_btn_play_pause"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/widget_btn_ripple"
+                    android:contentDescription="Play or Pause"
+                    android:padding="7dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_widget_play" />
+
+                <ImageButton
+                    android:id="@+id/widget_btn_next"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/widget_btn_ripple"
+                    android:contentDescription="Next"
+                    android:padding="6dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_widget_next" />
+
+                <!-- short bars + dots strip (grows with the song) -->
+                <ImageView
+                    android:id="@+id/widget_visualizer"
+                    android:layout_width="0dp"
+                    android:layout_height="14dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:contentDescription="@null"
+                    android:scaleType="fitEnd"
+                    android:visibility="gone" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 
-    </LinearLayout>
+    <!-- source app icon (top-left corner of the cover) -->
+    <ImageView
+        android:id="@+id/widget_source_icon"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="15dp"
+        android:layout_marginTop="15dp"
+        android:contentDescription="@null"
+        android:visibility="gone" />
 
-    <!-- Output device badge, sits on the bottom-left corner of the cover -->
+    <!-- output device badge (bottom-left corner of the cover) -->
     <TextView
         android:id="@+id/widget_device_chip"
         android:layout_width="wrap_content"

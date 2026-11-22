@@ -102,6 +102,33 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun saveCoverWidgetArtwork(uri: Uri) {
+        viewModelScope.launch {
+            val success = CustomArtworkManager.saveCoverWidgetArtworkFromUri(getApplication(), uri)
+            if (success) {
+                preferences.saveUseCoverWidgetArtwork(true)
+                syncToWidgets()
+                _toastMessage.value = "Cover widget image updated!"
+            } else {
+                _toastMessage.value = "Failed to load selected image"
+            }
+        }
+    }
+
+    fun removeCoverWidgetArtwork() {
+        viewModelScope.launch {
+            CustomArtworkManager.removeCoverWidgetArtwork(getApplication())
+            preferences.saveUseCoverWidgetArtwork(false)
+            syncToWidgets()
+            _toastMessage.value = "Cover widget now follows the playing song"
+        }
+    }
+
+    fun setUseCoverWidgetArtwork(enabled: Boolean) {
+        preferences.saveUseCoverWidgetArtwork(enabled)
+        syncToWidgets()
+    }
+
     fun setUseCustomArtwork(enabled: Boolean) {
         preferences.setUseCustomArtwork(enabled)
         syncToWidgets()

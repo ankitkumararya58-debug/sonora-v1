@@ -8,7 +8,7 @@ enum class WidgetPreset {
 enum class WidgetTheme {
     DARK,
     LIGHT,
-    TRANSPARENT,
+    DEFAULT,
     PIXEL,
     GLASS
 }
@@ -36,5 +36,6 @@ data class WidgetSettings(
     val showDeviceChip: Boolean = true,
     val themedIcons: Boolean = true,
     val liveVisualizer: Boolean = false,
+    val useCoverWidgetArtwork: Boolean = false,
     val playlistUrl: String = ""
 )

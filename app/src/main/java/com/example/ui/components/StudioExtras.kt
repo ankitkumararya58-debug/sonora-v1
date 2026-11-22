@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,6 +22,8 @@ import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -91,6 +95,13 @@ fun StudioExtras(
     val context = LocalContext.current
     val device by viewModel.outputDevice.collectAsState()
 
+    val coverImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) viewModel.saveCoverWidgetArtwork(uri)
+    }
+    val hasCoverWidgetImage = CustomArtworkManager.hasCoverWidgetCover(context)
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -111,10 +122,10 @@ fun StudioExtras(
             settings.coverShape,
             settings.coverSizePercent,
             settings.cornerRadiusDp,
-            settings.useCustomArtwork
+            settings.useCoverWidgetArtwork
         ) {
-            val art = if (settings.useCustomArtwork) {
-                CustomArtworkManager.loadCustomCoverBitmap(context) ?: trackState.albumArt
+            val art = if (settings.useCoverWidgetArtwork) {
+                CustomArtworkManager.loadCoverWidgetBitmap(context) ?: trackState.albumArt
             } else {
                 trackState.albumArt
             }
@@ -122,7 +133,8 @@ fun StudioExtras(
                 context = context,
                 art = art,
                 shape = settings.coverShape,
-                canvasPx = 360,
+                widthPx = 480,
+                heightPx = 320,
                 sizePercent = settings.coverSizePercent,
                 cornerPercent = settings.cornerRadiusDp
             ).asImageBitmap()
@@ -131,7 +143,10 @@ fun StudioExtras(
             Image(
                 bitmap = preview,
                 contentDescription = "Cover widget preview",
-                modifier = Modifier.size(180.dp).testTag("cover_widget_preview")
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .aspectRatio(480f / 320f)
+                    .testTag("cover_widget_preview")
             )
         }
 
@@ -192,17 +207,64 @@ fun StudioExtras(
             modifier = Modifier.testTag("slider_cover_size")
         )
         Text(
-            text = "The \"Rounded\" shape uses the Corner Radius slider above.",
+            text = "\"Rounded\" fills the widget as a rounded rectangle and uses the Corner Radius slider above.",
             style = MaterialTheme.typography.labelSmall,
             color = SonoraTextMuted
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        ExtrasLabel("COVER WIDGET IMAGE")
+        Text(
+            text = "Give the Cover widget its own picture. It is separate from the main widget's custom cover.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SonoraTextSecondary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    coverImagePicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = SonoraTextPrimary),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorder),
+                modifier = Modifier.weight(1f).testTag("btn_pick_cover_widget_image")
+            ) {
+                Text(if (hasCoverWidgetImage) "Change image" else "Choose image", fontSize = 13.sp)
+            }
+            if (hasCoverWidgetImage) {
+                OutlinedButton(
+                    onClick = { viewModel.removeCoverWidgetArtwork() },
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SonoraTextSecondary),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SonoraBorder),
+                    modifier = Modifier.weight(1f).testTag("btn_remove_cover_widget_image")
+                ) {
+                    Text("Use live cover", fontSize = 13.sp)
+                }
+            }
+        }
+        if (hasCoverWidgetImage) {
+            ToggleRow(
+                title = "Use my image on Cover widget",
+                subtitle = "Off = the Cover widget follows the playing song",
+                checked = settings.useCoverWidgetArtwork,
+                onChange = { viewModel.setUseCoverWidgetArtwork(it) },
+                tag = "switch_cover_widget_image"
+            )
+        }
 
         Spacer(modifier = Modifier.height(20.dp))
         ExtrasLabel("EXTRAS")
 
         ToggleRow(
             title = "Audio visualiser",
-            subtitle = "Spotify-style bars on the widget and the Home screen",
+            subtitle = "Short bars + dots on the widget (grow with the song) and live bars on Home",
             checked = settings.showVisualizer,
             onChange = { viewModel.setShowVisualizer(it) },
             tag = "switch_visualizer"
@@ -235,7 +297,7 @@ fun StudioExtras(
             tag = "switch_themed_icons"
         )
         Text(
-            text = "The widget's visualiser is a song-specific bar pattern (like a Spotify code). It cannot animate live because home screen widgets can't run animations.",
+            text = "Home screen widgets can't animate, so the widget redraws every few seconds while music plays. The Default theme shows a thin progress line instead.",
             style = MaterialTheme.typography.labelSmall,
             color = SonoraTextMuted
         )
@@ -322,8 +384,8 @@ fun HomeLiveExtras(
                 pixelStyle = settings.theme == WidgetTheme.PIXEL,
                 liveEnabled = settings.liveVisualizer,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
+                    .fillMaxWidth(0.6f)
+                    .height(28.dp)
                     .testTag("home_visualizer")
             )
         }

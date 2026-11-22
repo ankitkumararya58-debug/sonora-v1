@@ -13,9 +13,11 @@ import com.example.R
 import com.example.data.CustomArtworkManager
 import com.example.data.SonoraPreferences
 import com.example.service.MediaPlaybackManager
-import kotlin.math.min
 
-/** A second widget that shows ONLY the live cover, with a custom shape and size. */
+/**
+ * A second widget that shows ONLY the cover, with a custom shape and size.
+ * It has its OWN custom image (separate from the main widget's custom cover).
+ */
 class SonoraCoverWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -34,30 +36,23 @@ class SonoraCoverWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        private const val MAX_CANVAS_PX = 640
-
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             try {
                 val settings = SonoraPreferences(context).loadSettings()
                 val track = MediaPlaybackManager.trackState.value
+                val m = WidgetRenderer.metricsFor(context, appWidgetManager, widgetId, 110)
 
-                val options = appWidgetManager.getAppWidgetOptions(widgetId)
-                val wDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
-                val hDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
-                val density = context.resources.displayMetrics.density
-                val canvasPx = (min(wDp, hDp) * density).toInt().coerceIn(120, MAX_CANVAS_PX)
-
-                val art = if (settings.useCustomArtwork) {
-                    CustomArtworkManager.loadCustomCoverBitmap(context) ?: track.albumArt
-                } else {
-                    track.albumArt
-                }
+                val customArt = if (settings.useCoverWidgetArtwork) {
+                    CustomArtworkManager.loadCoverWidgetBitmap(context)
+                } else null
+                val art = customArt ?: track.albumArt
 
                 val bitmap = WidgetRenderer.shapedCover(
                     context = context,
                     art = art,
                     shape = settings.coverShape,
-                    canvasPx = canvasPx,
+                    widthPx = m.width,
+                    heightPx = m.height,
                     sizePercent = settings.coverSizePercent,
                     cornerPercent = settings.cornerRadiusDp
                 )
