@@ -8,7 +8,17 @@ enum class WidgetPreset {
 enum class WidgetTheme {
     DARK,
     LIGHT,
-    TRANSPARENT
+    TRANSPARENT,
+    PIXEL,
+    GLASS
+}
+
+/** Shape used by the standalone "Cover" widget. */
+enum class CoverShape {
+    ROUNDED,
+    CIRCLE,
+    SQUIRCLE,
+    PIXEL
 }
 
 data class WidgetSettings(
@@ -18,5 +28,13 @@ data class WidgetSettings(
     val opacityPercent: Int = 90,
     val showBlurBorder: Boolean = true,
     val customArtworkPath: String? = null,
-    val useCustomArtwork: Boolean = false
+    val useCustomArtwork: Boolean = false,
+    // --- v2 additions ---
+    val coverShape: CoverShape = CoverShape.ROUNDED,
+    val coverSizePercent: Int = 100,
+    val showVisualizer: Boolean = true,
+    val showDeviceChip: Boolean = true,
+    val themedIcons: Boolean = true,
+    val liveVisualizer: Boolean = false,
+    val playlistUrl: String = ""
 )

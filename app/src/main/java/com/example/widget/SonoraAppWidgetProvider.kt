@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.view.View
 import android.widget.RemoteViews
 import com.example.MainActivity
 import com.example.R
@@ -15,6 +16,7 @@ import com.example.data.SonoraPreferences
 import com.example.model.WidgetPreset
 import com.example.model.WidgetTheme
 import com.example.service.MediaPlaybackManager
+import com.example.service.OutputKind
 
 class SonoraAppWidgetProvider : AppWidgetProvider() {
 
@@ -58,18 +60,32 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
 
             val views = RemoteViews(context.packageName, layoutId)
 
+            val theme = settings.theme
+            val isPixel = theme == WidgetTheme.PIXEL
+            val isGlass = theme == WidgetTheme.GLASS
+            val isLight = theme == WidgetTheme.LIGHT
+
             // Background selection
-            val backgroundRes = when (settings.theme) {
+            val backgroundRes = when (theme) {
                 WidgetTheme.DARK -> if (isCard) R.drawable.widget_card_background_dark else R.drawable.widget_pill_background_dark
                 WidgetTheme.LIGHT -> if (isCard) R.drawable.widget_card_background_light else R.drawable.widget_pill_background_light
                 WidgetTheme.TRANSPARENT -> if (isCard) R.drawable.widget_card_background_trans else R.drawable.widget_pill_background_trans
+                WidgetTheme.PIXEL -> if (isCard) R.drawable.widget_card_background_pixel else R.drawable.widget_pill_background_pixel
+                WidgetTheme.GLASS -> if (isCard) R.drawable.widget_card_background_glass else R.drawable.widget_pill_background_glass
             }
             views.setInt(R.id.widget_root, "setBackgroundResource", backgroundRes)
 
             // Text colors
-            val isLight = settings.theme == WidgetTheme.LIGHT
-            val titleColor = if (isLight) Color.parseColor("#12151B") else Color.parseColor("#FFFFFF")
-            val artistColor = if (isLight) Color.parseColor("#5B6472") else Color.parseColor("#A0A8B5")
+            val titleColor = when {
+                isLight || isPixel -> Color.parseColor("#12151B")
+                else -> Color.parseColor("#FFFFFF")
+            }
+            val artistColor = when {
+                isPixel -> Color.parseColor("#444444")
+                isLight -> Color.parseColor("#5B6472")
+                isGlass -> Color.parseColor("#D9E2EE")
+                else -> Color.parseColor("#A0A8B5")
+            }
 
             views.setTextColor(R.id.widget_title, titleColor)
             views.setTextColor(R.id.widget_artist, artistColor)
@@ -90,13 +106,85 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
                 views.setImageViewResource(R.id.widget_album_art, R.drawable.ic_widget_music_default)
             }
 
-            // Play/Pause icon
+            // Control icons + button backgrounds (themed)
+            val usePixelIcons = settings.themedIcons && isPixel
             val playPauseRes = if (trackState.isPlaying) {
-                R.drawable.ic_widget_pause
+                if (usePixelIcons) R.drawable.ic_pixel_pause else R.drawable.ic_widget_pause
             } else {
-                R.drawable.ic_widget_play
+                if (usePixelIcons) R.drawable.ic_pixel_play else R.drawable.ic_widget_play
             }
             views.setImageViewResource(R.id.widget_btn_play_pause, playPauseRes)
+            views.setImageViewResource(
+                R.id.widget_btn_prev,
+                if (usePixelIcons) R.drawable.ic_pixel_prev else R.drawable.ic_widget_prev
+            )
+            views.setImageViewResource(
+                R.id.widget_btn_next,
+                if (usePixelIcons) R.drawable.ic_pixel_next else R.drawable.ic_widget_next
+            )
+
+            // The stock icons are white; tint them so they stay visible on light / pixel themes.
+            val iconTint = if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
+            views.setInt(R.id.widget_btn_play_pause, "setColorFilter", iconTint)
+            views.setInt(R.id.widget_btn_prev, "setColorFilter", iconTint)
+            views.setInt(R.id.widget_btn_next, "setColorFilter", iconTint)
+
+            if (settings.themedIcons && (isPixel || isGlass)) {
+                val mainBg = if (isPixel) R.drawable.widget_btn_pixel_main else R.drawable.widget_btn_glass
+                val smallBg = if (isPixel) R.drawable.widget_btn_pixel_small else R.drawable.widget_btn_glass
+                views.setInt(R.id.widget_btn_play_pause, "setBackgroundResource", mainBg)
+                views.setInt(R.id.widget_btn_prev, "setBackgroundResource", smallBg)
+                views.setInt(R.id.widget_btn_next, "setBackgroundResource", smallBg)
+            } else {
+                views.setInt(R.id.widget_btn_play_pause, "setBackgroundResource", R.drawable.widget_btn_ripple)
+                views.setInt(R.id.widget_btn_prev, "setBackgroundResource", R.drawable.widget_btn_ripple)
+                views.setInt(R.id.widget_btn_next, "setBackgroundResource", R.drawable.widget_btn_ripple)
+            }
+
+            // Output device badge + visualiser strip exist only in the card layout
+            if (isCard) {
+                if (settings.showDeviceChip) {
+                    val device = MediaPlaybackManager.outputDevice.value
+                    val label = when (device.kind) {
+                        OutputKind.PHONE_SPEAKER -> "\uD83D\uDD0A Speaker"
+                        OutputKind.WIRED -> "\uD83C\uDFA7 Earphones"
+                        OutputKind.BLUETOOTH -> "\uD83C\uDFA7 " + device.label
+                        OutputKind.USB -> "\uD83C\uDFA7 USB audio"
+                        OutputKind.OTHER -> "\uD83C\uDFA7 " + device.label
+                    }
+                    views.setTextViewText(R.id.widget_device_chip, label)
+                    views.setTextColor(
+                        R.id.widget_device_chip,
+                        if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
+                    )
+                    views.setInt(
+                        R.id.widget_device_chip,
+                        "setBackgroundResource",
+                        when {
+                            isPixel -> R.drawable.widget_chip_pixel
+                            isLight -> R.drawable.widget_chip_light
+                            else -> R.drawable.widget_chip_dark
+                        }
+                    )
+                    views.setViewVisibility(R.id.widget_device_chip, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_device_chip, View.GONE)
+                }
+
+                if (settings.showVisualizer) {
+                    val barColor = if (isLight || isPixel) Color.parseColor("#12151B") else Color.WHITE
+                    val bars = WidgetRenderer.visualizerBitmap(
+                        seedText = trackState.title + trackState.artist,
+                        color = barColor,
+                        pixelStyle = isPixel,
+                        dimmed = !trackState.isPlaying
+                    )
+                    views.setImageViewBitmap(R.id.widget_visualizer, bars)
+                    views.setViewVisibility(R.id.widget_visualizer, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_visualizer, View.GONE)
+                }
+            }
 
             // Pending Intents for controls
             views.setOnClickPendingIntent(
@@ -148,6 +236,7 @@ class SonoraAppWidgetProvider : AppWidgetProvider() {
                     updateWidget(context, appWidgetManager, id)
                 }
             }
+            SonoraCoverWidgetProvider.updateAll(context)
         }
     }
 }

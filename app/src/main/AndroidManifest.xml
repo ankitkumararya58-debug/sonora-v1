@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Optional: only used by the "Live audio" visualiser switch -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
         android:allowBackup="true"
@@ -48,6 +51,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/sonora_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SonoraCoverWidgetProvider"
+            android:exported="true"
+            android:label="@string/cover_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sonora_cover_widget_info" />
         </receiver>
 
     </application>

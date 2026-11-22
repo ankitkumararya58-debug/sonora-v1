@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">SONORA</string>
+    <string name="cover_widget_label">Sonora Cover</string>
+    <string name="cover_widget_description">Live album cover with custom shape and size</string>
 </resources>

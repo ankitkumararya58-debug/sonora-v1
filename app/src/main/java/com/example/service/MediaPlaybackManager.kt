@@ -20,6 +20,10 @@ object MediaPlaybackManager {
     private val _trackState = MutableStateFlow(MediaTrackState())
     val trackState: StateFlow<MediaTrackState> = _trackState.asStateFlow()
 
+    // Where the sound is going right now (phone speaker / earphones / bluetooth...)
+    private val _outputDevice = MutableStateFlow(OutputDevice())
+    val outputDevice: StateFlow<OutputDevice> = _outputDevice.asStateFlow()
+
     private var activeController: MediaController? = null
     private var mediaSessionManager: MediaSessionManager? = null
     private var sessionsChangedListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
@@ -69,6 +73,13 @@ object MediaPlaybackManager {
         }
 
         refreshActiveSessions(appContext)
+
+        AudioOutputMonitor.start(appContext) { device ->
+            if (_outputDevice.value != device) {
+                _outputDevice.value = device
+                notifyStateChanged()
+            }
+        }
         isInitialized = true
     }
 

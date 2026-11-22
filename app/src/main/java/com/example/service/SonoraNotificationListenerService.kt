@@ -11,6 +11,10 @@ class SonoraNotificationListenerService : NotificationListenerService() {
         super.onListenerConnected()
         val component = ComponentName(this, SonoraNotificationListenerService::class.java)
         MediaPlaybackManager.init(this, component)
+        val appContext = applicationContext
+        MediaPlaybackManager.setOnStateChangedListener {
+            SonoraAppWidgetProvider.updateAllWidgets(appContext)
+        }
         SonoraAppWidgetProvider.updateAllWidgets(this)
     }
 

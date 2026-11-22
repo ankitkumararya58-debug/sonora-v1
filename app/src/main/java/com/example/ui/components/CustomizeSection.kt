@@ -192,6 +192,7 @@ fun CustomizeSection(
                 modifier = Modifier.weight(1f).testTag("theme_transparent")
             )
         }
+        MoreThemeRow(settings = widgetSettings, viewModel = viewModel)
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -338,6 +339,14 @@ fun CustomizeSection(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        StudioExtras(
+            viewModel = viewModel,
+            settings = widgetSettings,
+            trackState = trackState
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         // Apply & Sync to Home Screen Widget Button
         Button(
             onClick = { viewModel.syncToWidgets() },
@@ -380,28 +389,36 @@ fun WidgetLivePreview(
 ) {
     val context = LocalContext.current
     val isPill = settings.preset == WidgetPreset.COMPACT_PILL
-    val cornerRadius = if (isPill) 100.dp else settings.cornerRadiusDp.dp
+    val cornerRadius = when {
+        settings.theme == WidgetTheme.PIXEL -> 6.dp
+        isPill -> 100.dp
+        else -> settings.cornerRadiusDp.dp
+    }
 
     val baseColor = when (settings.theme) {
         WidgetTheme.DARK -> Color(0xFF12151B)
         WidgetTheme.LIGHT -> Color(0xFFFFFFFF)
         WidgetTheme.TRANSPARENT -> Color(0xFF000000)
+        WidgetTheme.PIXEL -> Color(0xFFFFFFFF)
+        WidgetTheme.GLASS -> Color(0xFFFFFFFF)
     }
 
     val alpha = when (settings.theme) {
         WidgetTheme.TRANSPARENT -> (settings.opacityPercent / 100f * 0.45f)
+        WidgetTheme.GLASS -> (settings.opacityPercent / 100f * 0.30f)
         else -> (settings.opacityPercent / 100f)
     }
 
     val backgroundColor = baseColor.copy(alpha = alpha)
 
     val textColor = when (settings.theme) {
-        WidgetTheme.LIGHT -> Color(0xFF12151B)
+        WidgetTheme.LIGHT, WidgetTheme.PIXEL -> Color(0xFF12151B)
         else -> Color(0xFFFFFFFF)
     }
 
     val secondaryTextColor = when (settings.theme) {
         WidgetTheme.LIGHT -> Color(0xFF5B6472)
+        WidgetTheme.PIXEL -> Color(0xFF444444)
         else -> Color(0xFFA0A8B5)
     }
 
@@ -410,8 +427,10 @@ fun WidgetLivePreview(
             WidgetTheme.LIGHT -> Color(0x26000000)
             WidgetTheme.TRANSPARENT -> Color(0x66FFFFFF)
             WidgetTheme.DARK -> Color(0x33FFFFFF)
+            WidgetTheme.PIXEL -> Color(0xFF111111)
+            WidgetTheme.GLASS -> Color(0x99FFFFFF)
         }
-        Modifier.border(1.dp, borderColor, RoundedCornerShape(cornerRadius))
+        Modifier.border(if (settings.theme == WidgetTheme.PIXEL) 3.dp else 1.dp, borderColor, RoundedCornerShape(cornerRadius))
     } else Modifier
 
     val shadowElevation = if (settings.showBlurBorder) 8.dp else 0.dp

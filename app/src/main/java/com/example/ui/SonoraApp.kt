@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -52,6 +54,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.ui.components.CustomizeSection
 import com.example.ui.components.NowPlayingSection
+import com.example.ui.components.PlaylistSection
 import com.example.ui.components.SettingsSection
 import com.example.ui.theme.SonoraAccentCyan
 import com.example.ui.theme.SonoraAccentSilver
@@ -71,6 +74,7 @@ enum class SonoraTab(
 ) {
     HOME("Home", Icons.Filled.GraphicEq, Icons.Outlined.GraphicEq, "tab_home"),
     CUSTOMIZE("Customize", Icons.Filled.Palette, Icons.Outlined.Palette, "tab_customize"),
+    PLAYLIST("Playlist", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "tab_playlist"),
     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "tab_settings")
 }
 
@@ -182,6 +186,11 @@ fun SonoraApp(viewModel: SonoraViewModel) {
                     SonoraTab.CUSTOMIZE -> CustomizeSection(
                         viewModel = viewModel,
                         trackState = trackState,
+                        widgetSettings = widgetSettings,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    SonoraTab.PLAYLIST -> PlaylistSection(
+                        viewModel = viewModel,
                         widgetSettings = widgetSettings,
                         modifier = Modifier.fillMaxSize()
                     )

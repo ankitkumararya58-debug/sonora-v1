@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.model.CoverShape
 import com.example.model.WidgetPreset
 import com.example.model.WidgetSettings
 import com.example.model.WidgetTheme
@@ -46,8 +47,59 @@ class SonoraPreferences(private val context: Context) {
             opacityPercent = opacity,
             showBlurBorder = showBlurBorder,
             customArtworkPath = customPath,
-            useCustomArtwork = useCustomArtwork && customPath != null
+            useCustomArtwork = useCustomArtwork && customPath != null,
+            coverShape = loadCoverShape(),
+            coverSizePercent = prefs.getInt(KEY_COVER_SIZE, 100),
+            showVisualizer = prefs.getBoolean(KEY_VISUALIZER, true),
+            showDeviceChip = prefs.getBoolean(KEY_DEVICE_CHIP, true),
+            themedIcons = prefs.getBoolean(KEY_THEMED_ICONS, true),
+            liveVisualizer = prefs.getBoolean(KEY_LIVE_VIZ, false),
+            playlistUrl = prefs.getString(KEY_PLAYLIST_URL, "") ?: ""
         )
+    }
+
+    private fun loadCoverShape(): CoverShape {
+        val str = prefs.getString(KEY_COVER_SHAPE, CoverShape.ROUNDED.name)
+        return try {
+            CoverShape.valueOf(str ?: CoverShape.ROUNDED.name)
+        } catch (e: Exception) {
+            CoverShape.ROUNDED
+        }
+    }
+
+    fun saveCoverShape(shape: CoverShape) {
+        prefs.edit().putString(KEY_COVER_SHAPE, shape.name).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(coverShape = shape)
+    }
+
+    fun saveCoverSize(percent: Int) {
+        prefs.edit().putInt(KEY_COVER_SIZE, percent).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(coverSizePercent = percent)
+    }
+
+    fun saveShowVisualizer(show: Boolean) {
+        prefs.edit().putBoolean(KEY_VISUALIZER, show).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(showVisualizer = show)
+    }
+
+    fun saveShowDeviceChip(show: Boolean) {
+        prefs.edit().putBoolean(KEY_DEVICE_CHIP, show).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(showDeviceChip = show)
+    }
+
+    fun saveThemedIcons(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_THEMED_ICONS, enabled).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(themedIcons = enabled)
+    }
+
+    fun saveLiveVisualizer(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LIVE_VIZ, enabled).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(liveVisualizer = enabled)
+    }
+
+    fun savePlaylistUrl(url: String) {
+        prefs.edit().putString(KEY_PLAYLIST_URL, url).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(playlistUrl = url)
     }
 
     fun savePreset(preset: WidgetPreset) {
@@ -102,5 +154,12 @@ class SonoraPreferences(private val context: Context) {
         private const val KEY_OPACITY = "widget_opacity"
         private const val KEY_BLUR = "widget_blur"
         private const val KEY_USE_CUSTOM_ARTWORK = "widget_use_custom_artwork"
+        private const val KEY_COVER_SHAPE = "cover_shape"
+        private const val KEY_COVER_SIZE = "cover_size_percent"
+        private const val KEY_VISUALIZER = "show_visualizer"
+        private const val KEY_DEVICE_CHIP = "show_device_chip"
+        private const val KEY_THEMED_ICONS = "themed_icons"
+        private const val KEY_PLAYLIST_URL = "playlist_url"
+        private const val KEY_LIVE_VIZ = "live_visualizer"
     }
 }

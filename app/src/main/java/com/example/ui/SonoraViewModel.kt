@@ -6,11 +6,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.CustomArtworkManager
 import com.example.data.SonoraPreferences
+import com.example.model.CoverShape
 import com.example.model.MediaTrackState
 import com.example.model.WidgetPreset
 import com.example.model.WidgetSettings
 import com.example.model.WidgetTheme
 import com.example.service.MediaPlaybackManager
+import com.example.service.OutputDevice
 import com.example.widget.SonoraAppWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +28,8 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
     val trackState: StateFlow<MediaTrackState> = MediaPlaybackManager.trackState
 
     val widgetSettings: StateFlow<WidgetSettings> = preferences.settingsFlow
+
+    val outputDevice: StateFlow<OutputDevice> = MediaPlaybackManager.outputDevice
 
     private val _isPermissionGranted = MutableStateFlow(false)
     val isPermissionGranted: StateFlow<Boolean> = _isPermissionGranted.asStateFlow()
@@ -126,6 +130,39 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
     fun setShowBlurBorder(show: Boolean) {
         preferences.saveShowBlurBorder(show)
         syncToWidgets()
+    }
+
+    fun setCoverShape(shape: CoverShape) {
+        preferences.saveCoverShape(shape)
+        syncToWidgets()
+    }
+
+    fun setCoverSize(percent: Int) {
+        preferences.saveCoverSize(percent)
+        syncToWidgets()
+    }
+
+    fun setShowVisualizer(show: Boolean) {
+        preferences.saveShowVisualizer(show)
+        syncToWidgets()
+    }
+
+    fun setShowDeviceChip(show: Boolean) {
+        preferences.saveShowDeviceChip(show)
+        syncToWidgets()
+    }
+
+    fun setThemedIcons(enabled: Boolean) {
+        preferences.saveThemedIcons(enabled)
+        syncToWidgets()
+    }
+
+    fun setLiveVisualizer(enabled: Boolean) {
+        preferences.saveLiveVisualizer(enabled)
+    }
+
+    fun setPlaylistUrl(url: String) {
+        preferences.savePlaylistUrl(url.trim())
     }
 
     fun syncToWidgets() {
